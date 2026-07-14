@@ -7,12 +7,12 @@ import { cn } from "@/lib/utils";
 interface StatCardProps {
   label: string;
   value: string;
-  change: number;
+  change?: number;
   changeLabel?: string;
   icon: LucideIcon;
   iconClassName?: string;
   trendColor?: string;
-  sparkline: number[];
+  sparkline?: number[];
 }
 
 export function StatCard({
@@ -25,8 +25,8 @@ export function StatCard({
   trendColor = "var(--chart-1)",
   sparkline,
 }: StatCardProps) {
-  const isPositive = change >= 0;
-  const data = sparkline.map((v, i) => ({ i, v }));
+  const isPositive = (change ?? 0) >= 0;
+  const data = sparkline?.map((v, i) => ({ i, v })) ?? [];
 
   return (
     <Card className="gap-4 py-5">
@@ -43,18 +43,21 @@ export function StatCard({
       </CardHeader>
       <CardContent className="px-5">
         <div className="text-2xl font-semibold tracking-tight">{value}</div>
-        <div className="mt-1 flex items-center gap-1.5 text-xs">
-          <span
-            className={cn(
-              "flex items-center gap-0.5 font-medium",
-              isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
-            )}
-          >
-            {isPositive ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
-            {Math.abs(change)}%
-          </span>
-          <span className="text-muted-foreground">{changeLabel}</span>
-        </div>
+        {change !== undefined && (
+          <div className="mt-1 flex items-center gap-1.5 text-xs">
+            <span
+              className={cn(
+                "flex items-center gap-0.5 font-medium",
+                isPositive ? "text-emerald-600 dark:text-emerald-400" : "text-red-600 dark:text-red-400"
+              )}
+            >
+              {isPositive ? <ArrowUpRight className="size-3.5" /> : <ArrowDownRight className="size-3.5" />}
+              {Math.abs(change)}%
+            </span>
+            <span className="text-muted-foreground">{changeLabel}</span>
+          </div>
+        )}
+        {sparkline && (
         <div className="mt-3 h-10">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data} margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
@@ -74,6 +77,7 @@ export function StatCard({
             </AreaChart>
           </ResponsiveContainer>
         </div>
+        )}
       </CardContent>
     </Card>
   );

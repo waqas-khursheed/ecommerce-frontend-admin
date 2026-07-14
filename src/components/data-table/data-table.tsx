@@ -11,7 +11,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table";
-import { ArrowUpDown, ChevronLeft, ChevronRight, Search } from "lucide-react";
+import { ArrowUpDown, ChevronLeft, ChevronRight, Loader2, Search } from "lucide-react";
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -39,6 +39,7 @@ export interface FilterTab {
 interface DataTableProps<TData> {
   columns: ColumnDef<TData, unknown>[];
   data: TData[];
+  isLoading?: boolean;
   searchPlaceholder?: string;
   searchColumn?: string;
   filterTabs?: FilterTab[];
@@ -49,6 +50,7 @@ interface DataTableProps<TData> {
 export function DataTable<TData>({
   columns,
   data,
+  isLoading = false,
   searchPlaceholder = "Search...",
   searchColumn,
   filterTabs,
@@ -144,7 +146,13 @@ export function DataTable<TData>({
             ))}
           </TableHeader>
           <TableBody>
-            {table.getRowModel().rows.length ? (
+            {isLoading ? (
+              <TableRow>
+                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                  <Loader2 className="mx-auto size-5 animate-spin" />
+                </TableCell>
+              </TableRow>
+            ) : table.getRowModel().rows.length ? (
               table.getRowModel().rows.map((row) => (
                 <TableRow key={row.id}>
                   {row.getVisibleCells().map((cell) => (

@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Star } from "lucide-react";
+import { Plus, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { RowActions } from "@/components/data-table/row-actions";
+import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
+import { ImageUploadField } from "@/components/data-table/image-upload-field";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Sheet,
   SheetClose,
@@ -22,6 +25,7 @@ import {
 } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -29,118 +33,262 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { brands, categories, products as initialProducts, type ProductRow } from "@/lib/mock/catalog";
-
-function ProductThumb({ name }: { name: string }) {
-  const initial = name.charAt(0).toUpperCase();
-  return (
-    <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-sm font-semibold text-primary">
-      {initial}
-    </div>
-  );
-}
+import { productService } from "@/services/product.service";
+import { categoryService } from "@/services/category.service";
+import { brandService } from "@/services/brand.service";
+import { tagService, productTagService } from "@/services/tag.service";
+import { uploadUrl } from "@/lib/http";
+import { getApiErrorMessage } from "@/lib/apiError";
+import type { Product } from "@/types/product";
+import type { Category } from "@/types/category";
+import type { Brand } from "@/types/brand";
+import type { ProductTag } from "@/types/tag";
 
 export default function ProductsPage() {
-  const [rows, setRows] = useState<ProductRow[]>(initialProducts);
-  const [editing, setEditing] = useState<ProductRow | null>(null);
-  const [open, setOpen] = useState(false);
+  const [rows, setRows] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [brands, setBrands] = useState<Brand[]>([]);
+  const [tags, setTags] = useState<ProductTag[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const columns = useMemo<ColumnDef<ProductRow, unknown>[]>(
+  const [editing, setEditing] = useState<Product | null>(null);
+  const [open, setOpen] = useState(false);
+  const [featuredImageFile, setFeaturedImageFile] = useState<File | null>(null);
+  const [hoveredImageFile, setHoveredImageFile] = useState<File | null>(null);
+  const [galleryFiles, setGalleryFiles] = useState<FileList | null>(null);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+  const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const loadAll = useCallback(async () => {
+    try {
+      const [productsRes, categoriesRes, brandsRes, tagsRes] = await Promise.all([
+        productService.list({ limit: 100 }),
+        categoryService.list({ limit: 100 }),
+        brandService.list({ limit: 100 }),
+        tagService.list({ limit: 100 }),
+      ]);
+      setRows(productsRes.items);
+      setCategories(categoriesRes.items);
+      setBrands(brandsRes.items);
+      setTags(tagsRes.items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load products"));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [productsRes, categoriesRes, brandsRes, tagsRes] = await Promise.all([
+          productService.list({ limit: 100 }),
+          categoryService.list({ limit: 100 }),
+          brandService.list({ limit: 100 }),
+          tagService.list({ limit: 100 }),
+        ]);
+        setRows(productsRes.items);
+        setCategories(categoriesRes.items);
+        setBrands(brandsRes.items);
+        setTags(tagsRes.items);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "Failed to load products"));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  const brandTitleById = useMemo(() => new Map(brands.map((b) => [b.id, b.title])), [brands]);
+
+  const openCreate = () => {
+    setEditing(null);
+    setFeaturedImageFile(null);
+    setHoveredImageFile(null);
+    setGalleryFiles(null);
+    setSelectedCategoryIds([]);
+    setSelectedTagIds([]);
+    setOpen(true);
+  };
+
+  const openEdit = async (product: Product) => {
+    // The list endpoint doesn't eager-load productGalleries/assignCatToProducts
+    // (only getById does), so re-fetch the full row here — otherwise the
+    // edit form would always show an empty gallery and no selected categories
+    // even though they're saved correctly in the database. Tag assignments
+    // live in a separate table entirely (assign_tag_to_products), fetched here too.
+    setFeaturedImageFile(null);
+    setHoveredImageFile(null);
+    setGalleryFiles(null);
+    setEditing(product);
+    setSelectedCategoryIds((product.assignCatToProducts ?? []).map((a) => a.category_id));
+    setSelectedTagIds([]);
+    setOpen(true);
+
+    try {
+      const [full, productTags] = await Promise.all([
+        productService.getById(product.id),
+        productTagService.getByProduct(product.id),
+      ]);
+      setEditing(full);
+      setSelectedCategoryIds((full.assignCatToProducts ?? []).map((a) => a.category_id));
+      setSelectedTagIds(productTags.map((t) => t.tag_id));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load product details"));
+    }
+  };
+
+  const columns = useMemo<ColumnDef<Product, unknown>[]>(
     () => [
       {
-        accessorKey: "name",
+        accessorKey: "title",
         header: "Product",
         cell: ({ row }) => (
           <div className="flex items-center gap-3">
-            <ProductThumb name={row.original.name} />
+            <div className="flex size-9 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={uploadUrl("products", row.original.featured_image) ?? undefined}
+                alt=""
+                className="size-full object-cover"
+              />
+            </div>
             <div>
-              <p className="font-medium">{row.original.name}</p>
-              <p className="text-xs text-muted-foreground">{row.original.sku}</p>
+              <p className="font-medium">{row.original.title}</p>
+              <p className="text-xs text-muted-foreground">{row.original.sku ?? "—"}</p>
             </div>
           </div>
         ),
       },
-      { accessorKey: "category", header: "Category" },
-      { accessorKey: "brand", header: "Brand" },
+      {
+        accessorKey: "brand_id",
+        header: "Brand",
+        cell: ({ getValue }) => brandTitleById.get(getValue() as number) ?? "—",
+      },
       {
         accessorKey: "price",
         header: "Price",
-        cell: ({ getValue }) => `$${(getValue() as number).toFixed(2)}`,
+        cell: ({ getValue }) => `$${Number(getValue()).toFixed(2)}`,
       },
-      { accessorKey: "stock", header: "Stock" },
+      { accessorKey: "quantity", header: "Stock" },
       {
-        accessorKey: "rating",
+        accessorKey: "sold",
         header: "Rating",
-        cell: ({ getValue }) => (
-          <span className="flex items-center gap-1">
-            <Star className="size-3.5 fill-amber-400 text-amber-400" />
-            {(getValue() as number).toFixed(1)}
+        cell: () => (
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Star className="size-3.5" />
+            —
           </span>
         ),
       },
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ getValue }) => <StatusBadge status={getValue() as string} />,
+        cell: ({ getValue }) => <StatusBadge status={getValue() === 1 ? "Active" : "Draft"} />,
       },
       {
         id: "actions",
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end">
-            <RowActions
-              onView={() => toast.info(`Viewing "${row.original.name}" (UI only)`)}
-              onEdit={() => {
-                setEditing(row.original);
-                setOpen(true);
-              }}
-              onDelete={() => {
-                setRows((prev) => prev.filter((r) => r.id !== row.original.id));
-                toast.success(`"${row.original.name}" deleted`);
-              }}
-            />
+            <RowActions onEdit={() => openEdit(row.original)} onDelete={() => setDeletingId(row.original.id)} />
           </div>
         ),
       },
     ],
-    []
+    [brandTitleById]
   );
 
-  const handleSubmit = (formData: FormData) => {
-    const name = String(formData.get("name") ?? "");
-    const sku = String(formData.get("sku") ?? "");
-    const category = String(formData.get("category") ?? categories[0]?.name);
-    const brand = String(formData.get("brand") ?? brands[0]?.name);
-    const price = Number(formData.get("price") ?? 0);
-    const stock = Number(formData.get("stock") ?? 0);
-    const status = String(formData.get("status") ?? "Active") as ProductRow["status"];
-
-    if (editing) {
-      setRows((prev) =>
-        prev.map((r) =>
-          r.id === editing.id ? { ...r, name, sku, category, brand, price, stock, status } : r
-        )
-      );
-      toast.success(`"${name}" updated`);
-    } else {
-      setRows((prev) => [
-        {
-          id: Math.max(0, ...prev.map((r) => r.id)) + 1,
-          name,
-          sku,
-          category,
-          brand,
-          price,
-          stock,
-          status,
-          rating: 0,
-        },
-        ...prev,
-      ]);
-      toast.success(`"${name}" added`);
+  const handleSubmit = async (formData: FormData) => {
+    if (!editing && !featuredImageFile) {
+      toast.error("Featured image is required");
+      return;
     }
-    setOpen(false);
-    setEditing(null);
+
+    setIsSubmitting(true);
+
+    const payload = new FormData();
+    const textFields = [
+      "title", "short_desc", "long_desc", "features", "inside_box", "sku",
+      "video_1", "video_2", "featured_image_alt", "featured_image_title",
+      "hovered_image_alt", "hovered_image_title", "meta_keywords", "meta_description",
+    ];
+    for (const field of textFields) {
+      payload.append(field, String(formData.get(field) ?? ""));
+    }
+
+    payload.append("price", String(formData.get("price") ?? "0"));
+    payload.append("d_price", String(formData.get("d_price") ?? "0"));
+    payload.append("d_percentage", String(formData.get("d_percentage") ?? "0"));
+    payload.append("quantity", String(formData.get("quantity") ?? "0"));
+    payload.append("status", String(formData.get("status") ?? "1"));
+    payload.append("weight", String(formData.get("weight") ?? "0"));
+    payload.append("new_arrival", formData.get("new_arrival") ? "1" : "0");
+    payload.append("best_seller", formData.get("best_seller") ? "1" : "0");
+    payload.append("is_variation", formData.get("is_variation") ? "1" : "0");
+    payload.append("is_prescription", formData.get("is_prescription") ? "1" : "0");
+
+    const brandId = formData.get("brand_id");
+    if (brandId) payload.append("brand_id", String(brandId));
+
+    payload.append("category_ids", selectedCategoryIds.join(","));
+
+    if (featuredImageFile) payload.append("featured_image", featuredImageFile);
+    if (hoveredImageFile) payload.append("hovered_image", hoveredImageFile);
+    if (galleryFiles) {
+      Array.from(galleryFiles).forEach((file) => payload.append("gallery", file));
+    }
+
+    try {
+      let productId = editing?.id;
+      if (editing) {
+        await productService.update(editing.id, payload);
+        toast.success(`"${formData.get("title")}" updated`);
+      } else {
+        const created = await productService.create(payload);
+        productId = created.id;
+        toast.success(`"${formData.get("title")}" created`);
+      }
+      // Tag assignment lives in its own table (assign_tag_to_products), not
+      // part of the product create/update payload — synced separately here.
+      if (productId) await productTagService.sync(productId, selectedTagIds);
+      setOpen(false);
+      setEditing(null);
+      await loadAll();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to save product"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    const target = rows.find((r) => r.id === deletingId);
+
+    try {
+      await productService.remove(deletingId);
+      toast.success(`"${target?.title}" deleted`);
+      await loadAll();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete product"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const handleRemoveGalleryImage = async (galleryId: number) => {
+    try {
+      await productService.removeGalleryImage(galleryId);
+      setEditing((prev) =>
+        prev ? { ...prev, productGalleries: prev.productGalleries?.filter((g) => g.id !== galleryId) } : prev
+      );
+      toast.success("Gallery image removed");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to remove image"));
+    }
   };
 
   return (
@@ -157,89 +305,229 @@ export default function ProductsPage() {
               if (!v) setEditing(null);
             }}
           >
-            <SheetTrigger
-              render={
-                <Button onClick={() => setEditing(null)}>
-                  <Plus />
-                  Add Product
-                </Button>
-              }
-            />
-            <SheetContent className="sm:max-w-md">
-              <form action={(formData) => handleSubmit(formData)} className="flex h-full flex-col overflow-y-auto">
+            <SheetTrigger render={<Button onClick={openCreate}><Plus />Add Product</Button>} />
+            <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
+              <form action={handleSubmit} className="flex h-full flex-col overflow-y-auto">
                 <SheetHeader>
                   <SheetTitle>{editing ? "Edit Product" : "Add Product"}</SheetTitle>
                   <SheetDescription>
                     {editing ? "Update product details." : "Add a new product to your catalog."}
                   </SheetDescription>
                 </SheetHeader>
-                <div className="flex-1 space-y-4 px-4">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="name">Name</Label>
-                    <Input id="name" name="name" defaultValue={editing?.name} required />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="sku">SKU</Label>
-                    <Input id="sku" name="sku" defaultValue={editing?.sku} required />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
+
+                <div className="flex-1 space-y-6 px-4">
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Basic info</h3>
                     <div className="space-y-1.5">
-                      <Label htmlFor="category">Category</Label>
-                      <Select name="category" defaultValue={editing?.category ?? categories[0]?.name}>
-                        <SelectTrigger id="category" className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories.map((c) => (
-                            <SelectItem key={c.id} value={c.name}>
-                              {c.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Label htmlFor="title">Title</Label>
+                      <Input id="title" name="title" defaultValue={editing?.title} required />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="brand">Brand</Label>
-                      <Select name="brand" defaultValue={editing?.brand ?? brands[0]?.name}>
-                        <SelectTrigger id="brand" className="w-full">
-                          <SelectValue />
+                      <Label htmlFor="short_desc">Short description</Label>
+                      <Textarea id="short_desc" name="short_desc" defaultValue={editing?.short_desc ?? ""} rows={2} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="long_desc">Long description</Label>
+                      <Textarea id="long_desc" name="long_desc" defaultValue={editing?.long_desc ?? ""} rows={4} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="features">Features</Label>
+                        <Textarea id="features" name="features" defaultValue={editing?.features ?? ""} rows={2} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="inside_box">Inside the box</Label>
+                        <Textarea id="inside_box" name="inside_box" defaultValue={editing?.inside_box ?? ""} rows={2} />
+                      </div>
+                    </div>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Pricing & inventory</h3>
+                    <div className="grid grid-cols-3 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="price">Price</Label>
+                        <Input id="price" name="price" type="number" step="0.01" defaultValue={editing?.price} required />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="d_price">Discount price</Label>
+                        <Input id="d_price" name="d_price" type="number" step="0.01" defaultValue={editing?.d_price ?? 0} />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="d_percentage">Discount %</Label>
+                        <Input id="d_percentage" name="d_percentage" type="number" defaultValue={editing?.d_percentage ?? 0} />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label htmlFor="quantity">Quantity</Label>
+                        <Input id="quantity" name="quantity" type="number" defaultValue={editing?.quantity} required />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="sku">SKU</Label>
+                        <Input id="sku" name="sku" defaultValue={editing?.sku ?? ""} />
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="weight">Weight</Label>
+                      <Input id="weight" name="weight" type="number" step="0.01" defaultValue={editing?.weight ?? ""} />
+                    </div>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Images</h3>
+                    <ImageUploadField
+                      id="featured_image"
+                      label="Featured image"
+                      required={!editing}
+                      existingImageUrl={uploadUrl("products", editing?.featured_image)}
+                      onFileChange={setFeaturedImageFile}
+                    />
+                    <ImageUploadField
+                      id="hovered_image"
+                      label="Hovered image"
+                      existingImageUrl={uploadUrl("products", editing?.hovered_image)}
+                      onFileChange={setHoveredImageFile}
+                    />
+                    <div className="space-y-1.5">
+                      <Label htmlFor="gallery">Gallery (add more images)</Label>
+                      <Input
+                        id="gallery"
+                        name="gallery"
+                        type="file"
+                        multiple
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        onChange={(e) => setGalleryFiles(e.target.files)}
+                      />
+                      {editing && editing.productGalleries && editing.productGalleries.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pt-2">
+                          {editing.productGalleries.map((g) => (
+                            <div key={g.id} className="relative">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={uploadUrl("products", g.image) ?? undefined}
+                                alt=""
+                                className="size-14 rounded-md border object-cover"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveGalleryImage(g.id)}
+                                className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
+                              >
+                                <Trash2 className="size-3" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground">Organization</h3>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="brand_id">Brand</Label>
+                      <Select name="brand_id" defaultValue={editing?.brand_id ? String(editing.brand_id) : undefined}>
+                        <SelectTrigger id="brand_id" className="w-full">
+                          <SelectValue placeholder="Select a brand" />
                         </SelectTrigger>
                         <SelectContent>
                           {brands.map((b) => (
-                            <SelectItem key={b.id} value={b.name}>
-                              {b.name}
+                            <SelectItem key={b.id} value={String(b.id)}>
+                              {b.title}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="price">Price</Label>
-                      <Input id="price" name="price" type="number" step="0.01" defaultValue={editing?.price} required />
+                      <Label>Categories</Label>
+                      <div className="grid max-h-40 grid-cols-2 gap-2 overflow-y-auto rounded-md border p-3">
+                        {categories.map((c) => (
+                          <label key={c.id} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={selectedCategoryIds.includes(c.id)}
+                              onCheckedChange={(checked) =>
+                                setSelectedCategoryIds((prev) =>
+                                  checked ? [...prev, c.id] : prev.filter((id) => id !== c.id)
+                                )
+                              }
+                            />
+                            {c.title}
+                          </label>
+                        ))}
+                      </div>
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="stock">Stock</Label>
-                      <Input id="stock" name="stock" type="number" defaultValue={editing?.stock} required />
+                      <Label>Tags</Label>
+                      <div className="grid max-h-40 grid-cols-2 gap-2 overflow-y-auto rounded-md border p-3">
+                        {tags.map((t) => (
+                          <label key={t.id} className="flex items-center gap-2 text-sm">
+                            <Checkbox
+                              checked={selectedTagIds.includes(t.id)}
+                              onCheckedChange={(checked) =>
+                                setSelectedTagIds((prev) =>
+                                  checked ? [...prev, t.id] : prev.filter((id) => id !== t.id)
+                                )
+                              }
+                            />
+                            {t.name}
+                          </label>
+                        ))}
+                        {tags.length === 0 && (
+                          <p className="col-span-2 text-xs text-muted-foreground">No tags yet.</p>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="status">Status</Label>
-                    <Select name="status" defaultValue={editing?.status ?? "Active"}>
-                      <SelectTrigger id="status" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Active">Active</SelectItem>
-                        <SelectItem value="Draft">Draft</SelectItem>
-                        <SelectItem value="Out_of_stock">Out of stock</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox name="new_arrival" defaultChecked={editing?.new_arrival === 1} />
+                        New arrival
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox name="best_seller" defaultChecked={editing?.best_seller === 1} />
+                        Best seller
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox name="is_variation" defaultChecked={editing?.is_variation} />
+                        Has variations (size/color)
+                      </label>
+                      <label className="flex items-center gap-2 text-sm">
+                        <Checkbox name="is_prescription" defaultChecked={editing?.is_prescription} />
+                        Requires prescription
+                      </label>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="status">Status</Label>
+                      <Select name="status" defaultValue={String(editing?.status ?? 1)}>
+                        <SelectTrigger id="status" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Active</SelectItem>
+                          <SelectItem value="0">Draft</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </section>
+
+                  <section className="space-y-4">
+                    <h3 className="text-sm font-semibold text-muted-foreground">SEO & meta</h3>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="meta_keywords">Meta keywords</Label>
+                      <Input id="meta_keywords" name="meta_keywords" defaultValue={editing?.meta_keywords ?? ""} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="meta_description">Meta description</Label>
+                      <Textarea id="meta_description" name="meta_description" defaultValue={editing?.meta_description ?? ""} rows={2} />
+                    </div>
+                  </section>
                 </div>
+
                 <SheetFooter>
-                  <Button type="submit">{editing ? "Save changes" : "Create product"}</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Saving..." : editing ? "Save changes" : "Create product"}
+                  </Button>
                   <SheetClose render={<Button variant="outline">Cancel</Button>} />
                 </SheetFooter>
               </form>
@@ -251,15 +539,16 @@ export default function ProductsPage() {
       <DataTable
         columns={columns}
         data={rows}
+        isLoading={isLoading}
         searchPlaceholder="Search products..."
-        searchColumn="name"
-        filterColumn="status"
-        filterTabs={[
-          { label: "All", value: "all" },
-          { label: "Active", value: "Active" },
-          { label: "Draft", value: "Draft" },
-          { label: "Out of stock", value: "Out_of_stock" },
-        ]}
+        searchColumn="title"
+      />
+
+      <ConfirmDeleteDialog
+        open={deletingId !== null}
+        onOpenChange={(v) => !v && setDeletingId(null)}
+        title="Delete this product?"
+        onConfirm={handleDelete}
       />
     </div>
   );

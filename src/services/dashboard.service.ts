@@ -1,20 +1,25 @@
 import { http } from "@/lib/http";
 import type { ApiSuccessResponse } from "@/types/api";
+import type { DashboardOverview, OrderStats, SalesReportItem, TopProductItem } from "@/types/dashboard";
 
 export const dashboardService = {
-  getOverview: <TOverview>() =>
-    http.get<ApiSuccessResponse<TOverview>>("/admin/dashboard/overview").then((res) => res.data.data),
+  getOverview: () =>
+    http.get<ApiSuccessResponse<DashboardOverview>>("/admin/dashboard/overview").then((res) => res.data.data),
 
-  getOrderStats: <TOrderStats>() =>
-    http.get<ApiSuccessResponse<TOrderStats>>("/admin/dashboard/order-stats").then((res) => res.data.data),
+  getOrderStats: () =>
+    http.get<ApiSuccessResponse<OrderStats>>("/admin/dashboard/order-stats").then((res) => res.data.data),
 
-  getTopProducts: <TTopProducts>(limit?: number) =>
+  getTopProducts: (limit?: number) =>
     http
-      .get<ApiSuccessResponse<TTopProducts>>("/admin/dashboard/top-products", { params: { limit } })
-      .then((res) => res.data.data),
+      .get<ApiSuccessResponse<{ topProducts: TopProductItem[] }>>("/admin/dashboard/top-products", {
+        params: { limit },
+      })
+      .then((res) => res.data.data.topProducts),
 
-  getSalesReport: <TSalesReport>(from?: string, to?: string) =>
+  getSalesReport: (from?: string, to?: string) =>
     http
-      .get<ApiSuccessResponse<TSalesReport>>("/admin/dashboard/sales-report", { params: { from, to } })
-      .then((res) => res.data.data),
+      .get<ApiSuccessResponse<{ salesReport: SalesReportItem[] }>>("/admin/dashboard/sales-report", {
+        params: { from, to },
+      })
+      .then((res) => res.data.data.salesReport),
 };

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -9,8 +9,10 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { RowActions } from "@/components/data-table/row-actions";
+import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Sheet,
   SheetClose,
@@ -30,39 +32,182 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { coupons as initialCoupons, type CouponRow } from "@/lib/mock/marketing";
+import { couponService } from "@/services/coupon.service";
+import { categoryService } from "@/services/category.service";
+import { getApiErrorMessage } from "@/lib/apiError";
+import type { Coupon, CouponUsage } from "@/types/coupon";
+import type { Category } from "@/types/category";
 
 export default function CouponsPage() {
-  const [rows, setRows] = useState<CouponRow[]>(initialCoupons);
+  const [rows, setRows] = useState<Coupon[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [editing, setEditing] = useState<Coupon | null>(null);
   const [open, setOpen] = useState(false);
+  const [applyToAll, setApplyToAll] = useState(true);
+  const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [usagesFor, setUsagesFor] = useState<Coupon | null>(null);
+  const [usages, setUsages] = useState<CouponUsage[]>([]);
+  const [usagesOpen, setUsagesOpen] = useState(false);
+  const [isLoadingUsages, setIsLoadingUsages] = useState(false);
 
-  const columns = useMemo<ColumnDef<CouponRow, unknown>[]>(
+  const loadCoupons = async () => {
+    try {
+      const { items } = await couponService.list({ limit: 100 });
+      setRows(items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load coupons"));
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const [couponsRes, categoriesRes] = await Promise.all([
+          couponService.list({ limit: 100 }),
+          categoryService.list({ limit: 100 }),
+        ]);
+        setRows(couponsRes.items);
+        setCategories(categoriesRes.items);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "Failed to load coupons"));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  const openCreate = () => {
+    setEditing(null);
+    setApplyToAll(true);
+    setSelectedCategoryIds([]);
+    setOpen(true);
+  };
+
+  const openEdit = async (coupon: Coupon) => {
+    setEditing(coupon);
+    setApplyToAll(coupon.to_all !== 0);
+    setSelectedCategoryIds((coupon.metaCouponCategories ?? []).map((m) => m.cat_id));
+    setOpen(true);
+
+    // The list endpoint doesn't include metaCouponCategories (only getById
+    // does) — refetch so the category checkboxes reflect what's actually saved.
+    try {
+      const full = await couponService.getById(coupon.id);
+      setEditing(full);
+      setApplyToAll(full.to_all !== 0);
+      setSelectedCategoryIds((full.metaCouponCategories ?? []).map((m) => m.cat_id));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load coupon details"));
+    }
+  };
+
+  const toggleCategory = (id: number) => {
+    setSelectedCategoryIds((prev) => (prev.includes(id) ? prev.filter((c) => c !== id) : [...prev, id]));
+  };
+
+  const openUsages = async (coupon: Coupon) => {
+    setUsagesFor(coupon);
+    setUsagesOpen(true);
+    setUsages([]);
+    setIsLoadingUsages(true);
+    try {
+      const { items } = await couponService.getUsages(coupon.id, { limit: 100 });
+      setUsages(items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load usage history"));
+    } finally {
+      setIsLoadingUsages(false);
+    }
+  };
+
+  const handleSubmit = async (formData: FormData) => {
+    setIsSubmitting(true);
+    const expiresAt = String(formData.get("expires_at") ?? "");
+    const usageLimit = String(formData.get("usage_limit") ?? "");
+    const minOrderAmount = String(formData.get("min_order_amount") ?? "");
+
+    const payload = {
+      code: String(formData.get("code") ?? ""),
+      percentage: Number(formData.get("percentage") ?? 0),
+      status: Number(formData.get("status") ?? 1) as 0 | 1,
+      expires_at: expiresAt || null,
+      usage_limit: usageLimit ? Number(usageLimit) : null,
+      min_order_amount: minOrderAmount ? Number(minOrderAmount) : null,
+      to_all: (applyToAll ? 1 : 0) as 0 | 1,
+      category_ids: applyToAll ? [] : selectedCategoryIds,
+    };
+
+    try {
+      if (editing) {
+        await couponService.update(editing.id, payload);
+        toast.success(`"${payload.code}" updated`);
+      } else {
+        await couponService.create(payload);
+        toast.success(`"${payload.code}" created`);
+      }
+      setOpen(false);
+      setEditing(null);
+      await loadCoupons();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to save coupon"));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    try {
+      await couponService.remove(deletingId);
+      toast.success("Coupon deleted");
+      await loadCoupons();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete coupon"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const columns = useMemo<ColumnDef<Coupon, unknown>[]>(
     () => [
       { accessorKey: "code", header: "Code" },
-      { accessorKey: "type", header: "Type" },
       {
-        accessorKey: "value",
-        header: "Value",
-        cell: ({ row }) =>
-          row.original.type === "Percentage" ? `${row.original.value}%` : `$${row.original.value}`,
+        accessorKey: "percentage",
+        header: "Discount",
+        cell: ({ getValue }) => `${getValue()}%`,
+      },
+      {
+        id: "categories",
+        header: "Applies to",
+        cell: ({ row }) => (row.original.to_all ? "All categories" : "Selected categories"),
       },
       {
         id: "usage",
         header: "Usage",
-        cell: ({ row }) => (
-          <div className="w-32 space-y-1">
-            <Progress value={(row.original.used / row.original.limit) * 100} className="h-1.5" />
-            <span className="text-xs text-muted-foreground">
-              {row.original.used} / {row.original.limit}
-            </span>
-          </div>
-        ),
+        cell: ({ row }) =>
+          row.original.usage_limit ? (
+            <div className="w-32 space-y-1">
+              <Progress value={(row.original.used_count / row.original.usage_limit) * 100} className="h-1.5" />
+              <span className="text-xs text-muted-foreground">
+                {row.original.used_count} / {row.original.usage_limit}
+              </span>
+            </div>
+          ) : (
+            <span className="text-xs text-muted-foreground">{row.original.used_count} / unlimited</span>
+          ),
       },
-      { accessorKey: "expiry", header: "Expiry" },
+      {
+        accessorKey: "expires_at",
+        header: "Expiry",
+        cell: ({ getValue }) => (getValue() ? new Date(getValue() as string).toLocaleDateString() : "No expiry"),
+      },
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ getValue }) => <StatusBadge status={getValue() as string} />,
+        cell: ({ getValue }) => <StatusBadge status={getValue() === 1 ? "Active" : "Inactive"} />,
       },
       {
         id: "actions",
@@ -70,11 +215,9 @@ export default function CouponsPage() {
         cell: ({ row }) => (
           <div className="flex justify-end">
             <RowActions
-              onEdit={() => toast.info(`Edit "${row.original.code}" (UI only)`)}
-              onDelete={() => {
-                setRows((prev) => prev.filter((r) => r.id !== row.original.id));
-                toast.success(`"${row.original.code}" deleted`);
-              }}
+              onView={() => openUsages(row.original)}
+              onEdit={() => openEdit(row.original)}
+              onDelete={() => setDeletingId(row.original.id)}
             />
           </div>
         ),
@@ -83,20 +226,6 @@ export default function CouponsPage() {
     []
   );
 
-  const handleSubmit = (formData: FormData) => {
-    const code = String(formData.get("code") ?? "").toUpperCase();
-    const type = String(formData.get("type") ?? "Percentage") as CouponRow["type"];
-    const value = Number(formData.get("value") ?? 0);
-    const expiry = String(formData.get("expiry") ?? "");
-
-    setRows((prev) => [
-      { id: Math.max(0, ...prev.map((r) => r.id)) + 1, code, type, value, used: 0, limit: 500, expiry, status: "Active" },
-      ...prev,
-    ]);
-    toast.success(`Coupon "${code}" created`);
-    setOpen(false);
-  };
-
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -104,51 +233,112 @@ export default function CouponsPage() {
         description="Create and manage discount coupons."
         breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Coupons" }]}
         actions={
-          <Sheet open={open} onOpenChange={setOpen}>
-            <SheetTrigger
-              render={
-                <Button>
-                  <Plus />
-                  Add Coupon
-                </Button>
-              }
-            />
-            <SheetContent>
-              <form action={(formData) => handleSubmit(formData)} className="flex h-full flex-col">
+          <Sheet
+            open={open}
+            onOpenChange={(v) => {
+              setOpen(v);
+              if (!v) setEditing(null);
+            }}
+          >
+            <SheetTrigger render={<Button onClick={openCreate}><Plus />Add Coupon</Button>} />
+            <SheetContent className="overflow-y-auto">
+              <form action={handleSubmit} className="flex h-full flex-col">
                 <SheetHeader>
-                  <SheetTitle>Add Coupon</SheetTitle>
-                  <SheetDescription>Create a new discount coupon code.</SheetDescription>
+                  <SheetTitle>{editing ? "Edit Coupon" : "Add Coupon"}</SheetTitle>
+                  <SheetDescription>
+                    {editing ? "Update coupon details." : "Create a new discount coupon code."}
+                  </SheetDescription>
                 </SheetHeader>
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="code">Code</Label>
-                    <Input id="code" name="code" placeholder="SUMMER25" required />
+                    <Input id="code" name="code" placeholder="SUMMER25" defaultValue={editing?.code} required />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="type">Type</Label>
-                      <Select name="type" defaultValue="Percentage">
-                        <SelectTrigger id="type" className="w-full">
+                      <Label htmlFor="percentage">Discount %</Label>
+                      <Input
+                        id="percentage"
+                        name="percentage"
+                        type="number"
+                        step="0.01"
+                        max={100}
+                        defaultValue={editing?.percentage}
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="status">Status</Label>
+                      <Select name="status" defaultValue={String(editing?.status ?? 1)}>
+                        <SelectTrigger id="status" className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="Percentage">Percentage</SelectItem>
-                          <SelectItem value="Fixed">Fixed</SelectItem>
+                          <SelectItem value="1">Active</SelectItem>
+                          <SelectItem value="0">Inactive</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="value">Value</Label>
-                      <Input id="value" name="value" type="number" required />
+                      <Label htmlFor="usage_limit">Usage limit</Label>
+                      <Input
+                        id="usage_limit"
+                        name="usage_limit"
+                        type="number"
+                        placeholder="Unlimited"
+                        defaultValue={editing?.usage_limit ?? ""}
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="min_order_amount">Min. order amount</Label>
+                      <Input
+                        id="min_order_amount"
+                        name="min_order_amount"
+                        type="number"
+                        step="0.01"
+                        defaultValue={editing?.min_order_amount ?? ""}
+                      />
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label htmlFor="expiry">Expiry date</Label>
-                    <Input id="expiry" name="expiry" placeholder="Mar 31, 2026" required />
+                    <Label htmlFor="expires_at">Expiry date</Label>
+                    <Input
+                      id="expires_at"
+                      name="expires_at"
+                      type="date"
+                      defaultValue={editing?.expires_at ? editing.expires_at.slice(0, 10) : ""}
+                    />
+                  </div>
+
+                  <div className="space-y-2 rounded-md border p-3">
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <Checkbox checked={applyToAll} onCheckedChange={(v) => setApplyToAll(!!v)} />
+                      Applies to all categories
+                    </label>
+                    {!applyToAll && (
+                      <div className="grid max-h-40 grid-cols-2 gap-1.5 overflow-y-auto pt-1">
+                        {categories.map((cat) => (
+                          <label key={cat.id} className="flex items-center gap-1.5 text-sm">
+                            <Checkbox
+                              checked={selectedCategoryIds.includes(cat.id)}
+                              onCheckedChange={() => toggleCategory(cat.id)}
+                            />
+                            {cat.title}
+                          </label>
+                        ))}
+                        {categories.length === 0 && (
+                          <p className="col-span-2 text-xs text-muted-foreground">No categories yet.</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
                 <SheetFooter>
-                  <Button type="submit">Create coupon</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Saving..." : editing ? "Save changes" : "Create coupon"}
+                  </Button>
                   <SheetClose render={<Button variant="outline">Cancel</Button>} />
                 </SheetFooter>
               </form>
@@ -157,7 +347,51 @@ export default function CouponsPage() {
         }
       />
 
-      <DataTable columns={columns} data={rows} searchPlaceholder="Search coupons..." searchColumn="code" />
+      <DataTable
+        columns={columns}
+        data={rows}
+        isLoading={isLoading}
+        searchPlaceholder="Search coupons..."
+        searchColumn="code"
+      />
+
+      <ConfirmDeleteDialog
+        open={deletingId !== null}
+        onOpenChange={(v) => !v && setDeletingId(null)}
+        title="Delete this coupon?"
+        onConfirm={handleDelete}
+      />
+
+      <Sheet open={usagesOpen} onOpenChange={(v) => { setUsagesOpen(v); if (!v) setUsagesFor(null); }}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Usage history — {usagesFor?.code}</SheetTitle>
+            <SheetDescription>Every customer who has redeemed this coupon.</SheetDescription>
+          </SheetHeader>
+          <div className="flex-1 space-y-2 px-4">
+            {isLoadingUsages ? (
+              <p className="text-sm text-muted-foreground">Loading...</p>
+            ) : usages.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Not redeemed by any customer yet.</p>
+            ) : (
+              usages.map((u) => (
+                <div key={u.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
+                  <div>
+                    <p className="font-medium">
+                      {u.user ? `${u.user.first_name} ${u.user.last_name}` : `User #${u.user_id}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{u.user?.email}</p>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{new Date(u.created_at).toLocaleString()}</span>
+                </div>
+              ))
+            )}
+          </div>
+          <SheetFooter>
+            <SheetClose render={<Button variant="outline">Close</Button>} />
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }

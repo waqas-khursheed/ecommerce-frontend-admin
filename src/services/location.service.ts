@@ -1,17 +1,29 @@
 import { createCrudService } from "@/lib/createCrudService";
+import { http } from "@/lib/http";
+import type { ApiSuccessResponse } from "@/types/api";
+import type { City, Country, GeoZone, ProductCityAssignment, State } from "@/types/location";
 
-// Legacy flat location tables
-export const countryService = createCrudService("/admin/country");
-export const stateService = createCrudService("/admin/state");
-export const cityService = createCrudService("/admin/city");
+// Flat location hierarchy — the one actually referenced by product-city/user
+// addresses/card details (as opposed to the parallel geo_* reference tables,
+// which aren't part of the admin build-order's "Locations" tabs).
+export const countryService = createCrudService<Country>("/admin/country", { listKey: "countries" });
+export const stateService = createCrudService<State>("/admin/state", { listKey: "states" });
+export const cityService = createCrudService<City>("/admin/city", { listKey: "cities" });
 
-// Geo_* hierarchical location tables
-export const geoContinentService = createCrudService("/admin/geo-continent");
-export const geoSubContinentService = createCrudService("/admin/geo-sub-continent");
-export const geoCountryService = createCrudService("/admin/geo-country");
-export const geoStateService = createCrudService("/admin/geo-state");
-export const geoCityService = createCrudService("/admin/geo-city");
-export const geoZoneService = createCrudService("/admin/geo-zone");
+export const geoZoneService = createCrudService<GeoZone>("/admin/geo-zone", { listKey: "zones" });
 
-// Product/city availability assignment
-export const productCityService = createCrudService("/admin/product-city");
+// Product/city availability is keyed by productId, not a standard CRUD list —
+// GET fetches the cities currently assigned to a product, PUT fully replaces them.
+export const productCityService = {
+  getByProduct: (productId: number | string) =>
+    http
+      .get<ApiSuccessResponse<{ productCities: ProductCityAssignment[] }>>(`/admin/product-city/${productId}`)
+      .then((res) => res.data.data.productCities),
+
+  sync: (productId: number | string, cityIds: number[]) =>
+    http
+      .put<ApiSuccessResponse<{ productCities: ProductCityAssignment[] }>>(`/admin/product-city/${productId}`, {
+        city_ids: cityIds,
+      })
+      .then((res) => res.data.data.productCities),
+};

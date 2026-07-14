@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Bell, LogOut, Search, Settings, User as UserIcon } from "lucide-react";
 
@@ -19,12 +20,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-
-const RECENT_NOTIFICATIONS = [
-  { id: 1, title: "New order received", detail: "Order #ORD-7891 · $299.00", time: "2m ago" },
-  { id: 2, title: "Low stock alert", detail: "\"Overshirt with pockets\" has 4 units left", time: "1h ago" },
-  { id: 3, title: "New review submitted", detail: "5-star review on \"Half Shirt\"", time: "3h ago" },
-];
+import { notificationService } from "@/services/notification.service";
+import type { Notification } from "@/types/notification";
 
 function initials(name: string) {
   return name
@@ -39,6 +36,18 @@ export function Topbar() {
   const router = useRouter();
   const admin = useAuthStore((state) => state.admin);
   const logout = useAuthStore((state) => state.logout);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { items } = await notificationService.list({ limit: 5, seen: 0 });
+        setNotifications(items);
+      } catch {
+        // non-fatal — the bell just shows no unread notifications
+      }
+    })();
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -66,20 +75,28 @@ export function Topbar() {
             render={
               <Button variant="ghost" size="icon" className="relative rounded-full">
                 <Bell className="size-4" />
-                <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
+                {notifications.length > 0 && (
+                  <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
+                )}
               </Button>
             }
           />
           <DropdownMenuContent align="end" className="w-80">
             <DropdownMenuLabel>Notifications</DropdownMenuLabel>
             <DropdownMenuSeparator />
-            {RECENT_NOTIFICATIONS.map((n) => (
-              <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 py-2">
-                <span className="text-sm font-medium">{n.title}</span>
-                <span className="text-xs text-muted-foreground">{n.detail}</span>
-                <span className="text-[11px] text-muted-foreground/70">{n.time}</span>
-              </DropdownMenuItem>
-            ))}
+            {notifications.length === 0 ? (
+              <div className="px-2 py-3 text-sm text-muted-foreground">No new notifications</div>
+            ) : (
+              notifications.map((n) => (
+                <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 py-2">
+                  <span className="text-sm font-medium">{n.n_title}</span>
+                  <span className="text-xs text-muted-foreground">{n.n_desc}</span>
+                  <span className="text-[11px] text-muted-foreground/70">
+                    {new Date(n.created_at).toLocaleString()}
+                  </span>
+                </DropdownMenuItem>
+              ))
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem
               render={

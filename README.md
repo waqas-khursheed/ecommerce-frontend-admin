@@ -1,9 +1,34 @@
 # Ecommerce Admin — Frontend
 
 Next.js admin panel for the ecommerce backend (`../backed`). The API integration plumbing (HTTP
-client, services, auth, route protection) is wired up and working. The UI layer (all 19 pages
-listed below) is built with **static/mock data only** — no page except `/login` calls the real
-backend yet. Swapping mock data for the real `services/*` calls is the next step.
+client, services, auth, route protection) is wired up and working.
+
+**Real API integration status: every admin page is wired to the real backend.** There is no
+mock data left in the project (`lib/mock/*` has been deleted) — every list, create, update,
+delete, status-toggle and singleton-settings form on every page calls the actual
+`../backed` API and was smoke-tested live against it (login, CRUD cycles, and file uploads
+all confirmed working end-to-end).
+
+| Module | Notes |
+|---|---|
+| Login, Categories, Brands, Attributes (+ Items), Products, Stock | Full CRUD + image uploads |
+| Orders | List, detail view (items/billing), status + payment-status updates, seen, soft delete |
+| Customers | List, detail view (addresses), toggle status, delete (backend has no create/update) |
+| Reviews | List, approve/reject (status), delete (backend has no create/update) |
+| Coupons | Full CRUD incl. usage limits, min order amount, expiry |
+| Banners | 6 sub-resources (tabs): slide, home-banner, application-home-banner, side-banner, application-slide, mobile-slider — all image-upload CRUD |
+| Rewards | 3 sub-resources (tabs): reward-setting (CRUD), rewards-earning-method (CRUD), user-reward (read-only) |
+| Leads | 2 sub-resources (tabs): query-form (view/mark-seen/delete), subscriber (toggle/delete) |
+| CMS | 4 sub-resources (tabs): faq-category (CRUD), faq (CRUD), page (CRUD + image), contact-us-page (singleton) |
+| Locations | Country/State/City (flat hierarchy, CRUD) + Geo Zones (CRUD) + Product Availability (per-product city sync) |
+| Payments | 5 sub-resources (tabs): bank/card-category/card-type/card-detail (CRUD), mobile-card (read-only log) — no real payment gateway, just offline/manual payment metadata |
+| Notifications | List, mark-one/mark-all seen, delete — also wired into the topbar bell dropdown |
+| Settings | Singleton `web-setting` form (General incl. logo/favicon uploads, SEO). "Social" tab is a labeled placeholder — the backend has no social-link columns yet |
+| Dashboard / Analytics | Real overview stats, order-status breakdown, top products, and a 30-day revenue chart from `/admin/dashboard/*` |
+
+A few backend realities shaped the UI (see "Known gaps" below for details): order `status` is
+a bare integer with no backend-defined enum (labels are this UI's own convention), and the
+Settings page's Social tab has nothing to save to yet.
 
 ## Stack / what was installed
 
@@ -68,10 +93,10 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:3000/api
 src/
   app/
     login/page.tsx          # login screen (client component, calls the real API)
-    (admin)/                 # route group for authenticated admin pages (all mock data for now)
+    (admin)/                 # route group for authenticated admin pages — every page below is real
       layout.tsx             # SidebarProvider + AppSidebar + Topbar shell
-      dashboard/page.tsx      # overview stat cards, revenue chart, traffic donut, goals
-      analytics/page.tsx      # maps to dashboard.service: overview/order-stats/top-products/sales-report
+      dashboard/page.tsx      # real stat cards, revenue chart (sales-report), status donut, top products
+      analytics/page.tsx      # today's snapshot, order-status bar list, payment donut, top 10 products
       categories/page.tsx
       brands/page.tsx
       attributes/page.tsx     # tabs: Attributes / Attribute Items
@@ -110,11 +135,10 @@ src/
       mini-trend.tsx          # tiny up/down sparkline for table rows
     ui/                       # shadcn/ui primitives (Base UI-based, see note above)
   lib/
-    http.ts                  # axios instance, attaches Bearer token, handles 401
-    createCrudService.ts     # generic list/getById/create/update/remove factory
+    http.ts                  # axios instance, attaches Bearer token, handles 401; API_ORIGIN + uploadUrl()
+    createCrudService.ts     # generic list/getById/create/update/remove/toggleStatus factory
+    apiError.ts              # getApiErrorMessage() — joins Joi's errors: string[] into one message
     auth-token.ts            # cookie helpers for the JWT (name: admin_token)
-    mock/                    # static fixtures per module — dashboard, catalog, sales, marketing,
-                              # engagement, content, locations, payments, notifications
   store/
     auth.store.ts            # zustand store: admin info + isAuthenticated, persisted
   types/
@@ -136,7 +160,7 @@ src/
     reward.service.ts        # reward-setting/rewards-earning-method/user-reward
     cms.service.ts            # faq-category/faq/page/contact-us-page
     setting.service.ts        # web-setting
-    location.service.ts       # country/state/city + geo-* hierarchy + product-city
+    location.service.ts       # country/state/city (flat) + geo-zone + product-city
     payment.service.ts        # bank/card-category/card-type/card-detail/mobile-card
     notification.service.ts
     dashboard.service.ts      # overview/order-stats/top-products/sales-report
@@ -182,12 +206,43 @@ export const newResourceService = createCrudService("/admin/new-resource");
 
 ## Known gaps / next steps
 
-- **Every `(admin)` page reads from `lib/mock/*` static fixtures, not the real API.** Add/Edit/Delete
-  on list pages mutate local React state via `useState` only (so the UI feels interactive) — nothing
-  is persisted or sent to the backend. Wiring a page to the real API means replacing the
-  `useState(initialX)` call with the matching `services/*.service.ts` call (already built and
-  working — see the "API-backed page" section above) and moving the local mutations into
-  `.then()`/`await` calls against that service.
+- **File uploads are multipart, not JSON.** Any module with an image field (categories, brands,
+  attribute items, products, banners, CMS pages, settings logos) sends `FormData`, not a plain
+  object — `lib/http.ts`'s request interceptor deletes the default `Content-Type: application/json`
+  header when the body is `FormData` so axios/the browser can set the correct multipart boundary
+  itself. The backend returns a bare filename for every image field; build the displayable URL with
+  `uploadUrl(moduleFolderName, filename)` from `lib/http.ts` (e.g. `uploadUrl("products", p.featured_image)`).
+- **`createCrudService`'s `list()` normalizes each module's differently-named response key**
+  (`{ categories: [...] }`, `{ items: [...] }` for attribute items, `{ orders: [...] }`, etc.) into
+  a consistent `{ items, meta }` shape — every module's exact key was confirmed by reading the
+  backend controller (not guessed) and passed via the `listKey` option; it falls back to "first
+  array-valued property" only if `listKey` is omitted, which isn't guaranteed for a new module.
+- **Data-fetching effects are inlined async IIFEs, not calls to a named loader function**, e.g.
+  `useEffect(() => { (async () => { ... })(); }, [])`. The project's stricter
+  `react-hooks/set-state-in-effect` lint rule flags calling any named function that internally
+  calls `setState` directly from a `useEffect` body — even `useCallback`-wrapped, even with `void`
+  or `.catch()`. Only the fully self-contained inline IIFE satisfies it. A separate named function
+  (e.g. `loadOrders`) is still kept alongside for reuse after create/update/delete actions, where
+  the rule doesn't apply since it's called from an event handler, not directly from `useEffect`.
+- **Some read-only backend resources have no create/update UI on purpose, matching the backend**:
+  Customers (users), Reviews, user-reward, mobile-card, and Leads' query-form/subscriber rows are
+  all created server-side (checkout, storefront review/contact/subscribe forms) — the admin only
+  moderates/deletes them, there's no "Add" button because there's no backend route to call.
+- **Order `status` has no backend-defined enum** — `Order.status` is just `INTEGER(1)` validated as
+  0–9 in Joi with no named values anywhere in the backend. The 0–9 → label mapping in
+  `types/order.ts` (`ORDER_STATUS_LABELS`) is this admin UI's own convention (Pending → Processing →
+  Shipped → Delivered → Completed → Cancelled → Returned → Refunded → Failed → On Hold); if the
+  backend later adds a real enum, update that one map.
+- **Settings → Social tab has nothing to save.** The backend's `web_settings` table/Joi schema has
+  no facebook/instagram/twitter columns (confirmed against `WebSetting.js` and its migration) and
+  no `meta_title` field either (only `meta_keywords`/`meta_description`). The Social tab is a
+  labeled placeholder explaining this rather than a form that silently no-ops.
+- **Locations page covers the flat `country`/`state`/`city` + `geo-zone` + `product-city` endpoints**,
+  matching the 5 tabs the backend build-order named. The backend also exposes a fully separate,
+  fully-CRUD `geo_continent → geo_sub_continent → geo_country → geo_state → geo_city` reference
+  hierarchy (`/admin/geo-continent`, `/admin/geo-sub-continent`, `/admin/geo-country`,
+  `/admin/geo-state`, `/admin/geo-city`) that isn't wired into any page — it isn't referenced by
+  products/orders/addresses anywhere in the backend, so there was nothing to surface it against.
 - The JWT cookie is set client-side via `js-cookie` (not `httpOnly`). Fine for now; if this
   needs hardening later, move login through a Next.js Route Handler that sets an `httpOnly`
   cookie instead of returning the token to client JS.
@@ -195,4 +250,7 @@ export const newResourceService = createCrudService("/admin/new-resource");
   admin "me"/profile endpoint exists yet, so there's nothing to call for those.
 - Reference design: an "Apex Dashboard" shadcn/Next.js admin template (dark sidebar, green accent,
   stat cards with sparklines, tabbed area charts) — colors/spacing were approximated by hand in
-  `app/globals.css`, not pulled from a purchased template file.
+  `app/globals.css`, not pulled from a purchased template file. Dashboard/Analytics charts only show
+  metrics the backend actually computes (`/admin/dashboard/overview|order-stats|top-products|sales-report`);
+  no revenue-by-channel, sales-by-location, or "monthly target" data exists on the backend, so those
+  chart types from the reference design were left out rather than filled with fabricated numbers.

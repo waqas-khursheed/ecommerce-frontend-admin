@@ -17,3 +17,5 @@ export * from "./payment.service";
 export * from "./notification.service";
 export * from "./dashboard.service";
 export * from "./lead.service";
+export * from "./exchange.service";
+export * from "./tag.service";

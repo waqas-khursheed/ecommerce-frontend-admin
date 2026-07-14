@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -9,6 +9,8 @@ import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { RowActions } from "@/components/data-table/row-actions";
+import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
+import { ImageUploadField } from "@/components/data-table/image-upload-field";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -23,6 +25,7 @@ import {
 } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -30,42 +33,63 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { categories as initialCategories, type CategoryRow } from "@/lib/mock/catalog";
+import { categoryService } from "@/services/category.service";
+import { uploadUrl } from "@/lib/http";
+import { getApiErrorMessage } from "@/lib/apiError";
+import type { Category } from "@/types/category";
 
 export default function CategoriesPage() {
-  const [rows, setRows] = useState<CategoryRow[]>(initialCategories);
-  const [editing, setEditing] = useState<CategoryRow | null>(null);
+  const [rows, setRows] = useState<Category[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [editing, setEditing] = useState<Category | null>(null);
   const [open, setOpen] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [iconFile, setIconFile] = useState<File | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const columns = useMemo<ColumnDef<CategoryRow, unknown>[]>(
+  const loadCategories = useCallback(async () => {
+    try {
+      const { items } = await categoryService.list({ limit: 100 });
+      setRows(items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load categories"));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { items } = await categoryService.list({ limit: 100 });
+        setRows(items);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "Failed to load categories"));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  const parentTitleById = useMemo(() => new Map(rows.map((r) => [r.id, r.title])), [rows]);
+
+  const columns = useMemo<ColumnDef<Category, unknown>[]>(
     () => [
-      {
-        id: "select",
-        header: ({ table }) => (
-          <Checkbox
-            checked={table.getIsAllPageRowsSelected()}
-            onCheckedChange={(v) => table.toggleAllPageRowsSelected(!!v)}
-          />
-        ),
-        cell: ({ row }) => (
-          <Checkbox
-            checked={row.getIsSelected()}
-            onCheckedChange={(v) => row.toggleSelected(!!v)}
-          />
-        ),
-      },
-      { accessorKey: "name", header: "Name" },
+      { accessorKey: "title", header: "Name" },
       { accessorKey: "slug", header: "Slug" },
       {
-        accessorKey: "parent",
+        accessorKey: "parent_id",
         header: "Parent",
-        cell: ({ getValue }) => (getValue() as string | null) ?? "—",
+        cell: ({ getValue }) => {
+          const parentId = getValue() as number;
+          return parentId ? parentTitleById.get(parentId) ?? "—" : "—";
+        },
       },
-      { accessorKey: "products", header: "Products" },
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ getValue }) => <StatusBadge status={getValue() as string} />,
+        cell: ({ getValue }) => <StatusBadge status={getValue() === 1 ? "Active" : "Inactive"} />,
       },
       {
         id: "actions",
@@ -75,39 +99,69 @@ export default function CategoriesPage() {
             <RowActions
               onEdit={() => {
                 setEditing(row.original);
+                setImageFile(null);
+                setIconFile(null);
                 setOpen(true);
               }}
-              onDelete={() => {
-                setRows((prev) => prev.filter((r) => r.id !== row.original.id));
-                toast.success(`"${row.original.name}" deleted`);
-              }}
+              onDelete={() => setDeletingId(row.original.id)}
             />
           </div>
         ),
       },
     ],
-    []
+    [parentTitleById]
   );
 
-  const handleSubmit = (formData: FormData) => {
-    const name = String(formData.get("name") ?? "");
-    const slug = String(formData.get("slug") ?? "");
-    const status = String(formData.get("status") ?? "Active") as CategoryRow["status"];
+  const handleSubmit = async (formData: FormData) => {
+    setIsSubmitting(true);
 
-    if (editing) {
-      setRows((prev) =>
-        prev.map((r) => (r.id === editing.id ? { ...r, name, slug, status } : r))
-      );
-      toast.success(`"${name}" updated`);
-    } else {
-      setRows((prev) => [
-        { id: Math.max(0, ...prev.map((r) => r.id)) + 1, name, slug, parent: null, products: 0, status },
-        ...prev,
-      ]);
-      toast.success(`"${name}" added`);
+    const payload = new FormData();
+    payload.append("title", String(formData.get("title") ?? ""));
+    payload.append("description", String(formData.get("description") ?? ""));
+    payload.append("meta_title", String(formData.get("meta_title") ?? ""));
+    payload.append("meta_keywords", String(formData.get("meta_keywords") ?? ""));
+    payload.append("meta_desc", String(formData.get("meta_desc") ?? ""));
+    payload.append("status", String(formData.get("status") ?? "1"));
+    payload.append("order_by", String(formData.get("order_by") ?? "0"));
+    payload.append("is_size_chart", formData.get("is_size_chart") ? "true" : "false");
+
+    const parentId = formData.get("parent_id");
+    if (parentId && parentId !== "0") payload.append("parent_id", String(parentId));
+
+    if (imageFile) payload.append("image", imageFile);
+    if (iconFile) payload.append("icon", iconFile);
+
+    try {
+      if (editing) {
+        await categoryService.update(editing.id, payload);
+        toast.success(`"${formData.get("title")}" updated`);
+      } else {
+        await categoryService.create(payload);
+        toast.success(`"${formData.get("title")}" created`);
+      }
+      setOpen(false);
+      setEditing(null);
+      await loadCategories();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to save category"));
+    } finally {
+      setIsSubmitting(false);
     }
-    setOpen(false);
-    setEditing(null);
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    const target = rows.find((r) => r.id === deletingId);
+
+    try {
+      await categoryService.remove(deletingId);
+      toast.success(`"${target?.title}" deleted`);
+      await loadCategories();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete category"));
+    } finally {
+      setDeletingId(null);
+    }
   };
 
   return (
@@ -126,17 +180,20 @@ export default function CategoriesPage() {
           >
             <SheetTrigger
               render={
-                <Button onClick={() => setEditing(null)}>
+                <Button
+                  onClick={() => {
+                    setEditing(null);
+                    setImageFile(null);
+                    setIconFile(null);
+                  }}
+                >
                   <Plus />
                   Add Category
                 </Button>
               }
             />
-            <SheetContent>
-              <form
-                action={(formData) => handleSubmit(formData)}
-                className="flex h-full flex-col"
-              >
+            <SheetContent className="sm:max-w-md overflow-y-auto">
+              <form action={handleSubmit} className="flex h-full flex-col">
                 <SheetHeader>
                   <SheetTitle>{editing ? "Edit Category" : "Add Category"}</SheetTitle>
                   <SheetDescription>
@@ -145,28 +202,94 @@ export default function CategoriesPage() {
                 </SheetHeader>
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="name">Name</Label>
-                    <Input id="name" name="name" defaultValue={editing?.name} required />
+                    <Label htmlFor="title">Name</Label>
+                    <Input id="title" name="title" defaultValue={editing?.title} required />
                   </div>
+
                   <div className="space-y-1.5">
-                    <Label htmlFor="slug">Slug</Label>
-                    <Input id="slug" name="slug" defaultValue={editing?.slug} required />
+                    <Label htmlFor="description">Description</Label>
+                    <Textarea id="description" name="description" defaultValue={editing?.description ?? ""} rows={3} />
                   </div>
+
                   <div className="space-y-1.5">
-                    <Label htmlFor="status">Status</Label>
-                    <Select name="status" defaultValue={editing?.status ?? "Active"}>
-                      <SelectTrigger id="status" className="w-full">
+                    <Label htmlFor="parent_id">Parent category</Label>
+                    <Select name="parent_id" defaultValue={String(editing?.parent_id ?? 0)}>
+                      <SelectTrigger id="parent_id" className="w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="Active">Active</SelectItem>
-                        <SelectItem value="Inactive">Inactive</SelectItem>
+                        <SelectItem value="0">None (top-level)</SelectItem>
+                        {rows
+                          .filter((r) => r.id !== editing?.id)
+                          .map((r) => (
+                            <SelectItem key={r.id} value={String(r.id)}>
+                              {r.title}
+                            </SelectItem>
+                          ))}
                       </SelectContent>
                     </Select>
                   </div>
+
+                  <ImageUploadField
+                    id="image"
+                    label="Image"
+                    existingImageUrl={uploadUrl("categories", editing?.image)}
+                    onFileChange={setImageFile}
+                  />
+                  <ImageUploadField
+                    id="icon"
+                    label="Icon"
+                    existingImageUrl={uploadUrl("categories", editing?.icon)}
+                    onFileChange={setIconFile}
+                  />
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="order_by">Display order</Label>
+                      <Input id="order_by" name="order_by" type="number" defaultValue={editing?.order_by ?? 0} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="status">Status</Label>
+                      <Select name="status" defaultValue={String(editing?.status ?? 1)}>
+                        <SelectTrigger id="status" className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">Active</SelectItem>
+                          <SelectItem value="0">Inactive</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <Checkbox
+                      id="is_size_chart"
+                      name="is_size_chart"
+                      defaultChecked={editing?.is_size_chart ?? false}
+                    />
+                    <Label htmlFor="is_size_chart" className="font-normal">
+                      Has a size chart
+                    </Label>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label htmlFor="meta_title">Meta title</Label>
+                    <Input id="meta_title" name="meta_title" defaultValue={editing?.meta_title ?? ""} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="meta_keywords">Meta keywords</Label>
+                    <Input id="meta_keywords" name="meta_keywords" defaultValue={editing?.meta_keywords ?? ""} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="meta_desc">Meta description</Label>
+                    <Textarea id="meta_desc" name="meta_desc" defaultValue={editing?.meta_desc ?? ""} rows={2} />
+                  </div>
                 </div>
                 <SheetFooter>
-                  <Button type="submit">{editing ? "Save changes" : "Create category"}</Button>
+                  <Button type="submit" disabled={isSubmitting}>
+                    {isSubmitting ? "Saving..." : editing ? "Save changes" : "Create category"}
+                  </Button>
                   <SheetClose render={<Button variant="outline">Cancel</Button>} />
                 </SheetFooter>
               </form>
@@ -178,8 +301,17 @@ export default function CategoriesPage() {
       <DataTable
         columns={columns}
         data={rows}
+        isLoading={isLoading}
         searchPlaceholder="Search categories..."
-        searchColumn="name"
+        searchColumn="title"
+      />
+
+      <ConfirmDeleteDialog
+        open={deletingId !== null}
+        onOpenChange={(v) => !v && setDeletingId(null)}
+        title="Delete this category?"
+        description="Categories with subcategories can't be deleted — remove or reassign the children first."
+        onConfirm={handleDelete}
       />
     </div>
   );

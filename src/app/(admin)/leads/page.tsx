@@ -1,45 +1,110 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
+import { Eye } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { RowActions } from "@/components/data-table/row-actions";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
-  queryForms as initialQueryForms,
-  subscribers as initialSubscribers,
-  type QueryFormRow,
-  type SubscriberRow,
-} from "@/lib/mock/engagement";
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { getApiErrorMessage } from "@/lib/apiError";
+import { queryFormService, subscriberService } from "@/services/lead.service";
+import type { QueryForm, Subscriber } from "@/types/lead";
 
-export default function LeadsPage() {
-  const [queryForms, setQueryForms] = useState<QueryFormRow[]>(initialQueryForms);
-  const [subscribers, setSubscribers] = useState<SubscriberRow[]>(initialSubscribers);
+function QueryFormsTab() {
+  const [rows, setRows] = useState<QueryForm[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [viewing, setViewing] = useState<QueryForm | null>(null);
+  const [open, setOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const queryColumns = useMemo<ColumnDef<QueryFormRow, unknown>[]>(
+  const load = async () => {
+    try {
+      const { items } = await queryFormService.list({ limit: 100 });
+      setRows(items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load messages"));
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { items } = await queryFormService.list({ limit: 100 });
+        setRows(items);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "Failed to load messages"));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  const openMessage = async (row: QueryForm) => {
+    setViewing(row);
+    setOpen(true);
+    if (!row.seen) {
+      try {
+        await queryFormService.markSeen(row.id);
+        setRows((prev) => prev.map((r) => (r.id === row.id ? { ...r, seen: 1 } : r)));
+      } catch {
+        // non-fatal — the message still opens even if marking seen failed
+      }
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    try {
+      await queryFormService.remove(deletingId);
+      toast.success("Message deleted");
+      await load();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete message"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const columns = useMemo<ColumnDef<QueryForm, unknown>[]>(
     () => [
       { accessorKey: "name", header: "Name" },
       { accessorKey: "email", header: "Email" },
-      { accessorKey: "subject", header: "Subject" },
-      { accessorKey: "date", header: "Date" },
+      { accessorKey: "phone", header: "Phone", cell: ({ getValue }) => (getValue() as string) || "—" },
       {
-        accessorKey: "status",
+        accessorKey: "created_at",
+        header: "Date",
+        cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
+      },
+      {
+        accessorKey: "seen",
         header: "Status",
-        cell: ({ getValue }) => <StatusBadge status={getValue() as string} />,
+        cell: ({ getValue }) => <StatusBadge status={getValue() ? "Read" : "Pending"} />,
       },
       {
         id: "actions",
         header: "",
         cell: ({ row }) => (
-          <div className="flex justify-end">
-            <RowActions
-              onView={() => toast.info(`Viewing message from ${row.original.name} (UI only)`)}
-              onDelete={() => setQueryForms((prev) => prev.filter((r) => r.id !== row.original.id))}
-            />
+          <div className="flex justify-end gap-1">
+            <Button variant="ghost" size="icon" className="size-8" onClick={() => openMessage(row.original)}>
+              <Eye className="size-4" />
+            </Button>
+            <RowActions onDelete={() => setDeletingId(row.original.id)} />
           </div>
         ),
       },
@@ -47,23 +112,110 @@ export default function LeadsPage() {
     []
   );
 
-  const subscriberColumns = useMemo<ColumnDef<SubscriberRow, unknown>[]>(
+  return (
+    <div className="space-y-4">
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search messages..." searchColumn="name" />
+
+      <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setViewing(null); }}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>{viewing?.name}</SheetTitle>
+            <SheetDescription>{viewing?.email} {viewing?.phone ? `· ${viewing.phone}` : ""}</SheetDescription>
+          </SheetHeader>
+          {viewing && (
+            <div className="flex-1 px-4 text-sm text-muted-foreground whitespace-pre-wrap">
+              {viewing.description}
+            </div>
+          )}
+          <SheetFooter>
+            <SheetClose render={<Button variant="outline">Close</Button>} />
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+
+      <ConfirmDeleteDialog
+        open={deletingId !== null}
+        onOpenChange={(v) => !v && setDeletingId(null)}
+        title="Delete this message?"
+        onConfirm={handleDelete}
+      />
+    </div>
+  );
+}
+
+function SubscribersTab() {
+  const [rows, setRows] = useState<Subscriber[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  const load = async () => {
+    try {
+      const { items } = await subscriberService.list({ limit: 100 });
+      setRows(items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load subscribers"));
+    }
+  };
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const { items } = await subscriberService.list({ limit: 100 });
+        setRows(items);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "Failed to load subscribers"));
+      } finally {
+        setIsLoading(false);
+      }
+    })();
+  }, []);
+
+  const toggleStatus = async (id: number) => {
+    try {
+      const updated = await subscriberService.toggleStatus(id);
+      setRows((prev) => prev.map((r) => (r.id === id ? { ...r, status: updated.status, seen: 1 } : r)));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to update status"));
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deletingId) return;
+    try {
+      await subscriberService.remove(deletingId);
+      toast.success("Subscriber removed");
+      await load();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to remove subscriber"));
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const columns = useMemo<ColumnDef<Subscriber, unknown>[]>(
     () => [
       { accessorKey: "email", header: "Email" },
-      { accessorKey: "subscribed", header: "Subscribed On" },
+      {
+        accessorKey: "created_at",
+        header: "Subscribed On",
+        cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
+      },
       {
         accessorKey: "status",
         header: "Status",
-        cell: ({ getValue }) => <StatusBadge status={getValue() as string} />,
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2">
+            <StatusBadge status={row.original.status ? "Active" : "Inactive"} />
+            <Switch checked={!!row.original.status} onCheckedChange={() => toggleStatus(row.original.id)} />
+          </div>
+        ),
       },
       {
         id: "actions",
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end">
-            <RowActions
-              onDelete={() => setSubscribers((prev) => prev.filter((r) => r.id !== row.original.id))}
-            />
+            <RowActions onDelete={() => setDeletingId(row.original.id)} />
           </div>
         ),
       },
@@ -71,6 +223,20 @@ export default function LeadsPage() {
     []
   );
 
+  return (
+    <div className="space-y-4">
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search subscribers..." searchColumn="email" />
+      <ConfirmDeleteDialog
+        open={deletingId !== null}
+        onOpenChange={(v) => !v && setDeletingId(null)}
+        title="Remove this subscriber?"
+        onConfirm={handleDelete}
+      />
+    </div>
+  );
+}
+
+export default function LeadsPage() {
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
@@ -85,10 +251,10 @@ export default function LeadsPage() {
           <TabsTrigger value="subscribers">Subscribers</TabsTrigger>
         </TabsList>
         <TabsContent value="queries" className="mt-4">
-          <DataTable columns={queryColumns} data={queryForms} searchPlaceholder="Search messages..." searchColumn="name" />
+          <QueryFormsTab />
         </TabsContent>
         <TabsContent value="subscribers" className="mt-4">
-          <DataTable columns={subscriberColumns} data={subscribers} searchPlaceholder="Search subscribers..." searchColumn="email" />
+          <SubscribersTab />
         </TabsContent>
       </Tabs>
     </div>
