@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/select";
 import { orderService } from "@/services/order.service";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import { ORDER_STATUS_LABELS, PAYMENT_STATUS_OPTIONS, type Order, type PaymentStatus } from "@/types/order";
 
 function formatHistoryValue(field: string, value: string) {
@@ -38,34 +39,14 @@ function formatHistoryValue(field: string, value: string) {
 }
 
 export default function OrdersPage() {
-  const [rows, setRows] = useState<Order[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, setItems: setRows, isLoading, reload: loadOrders, pagination } = usePaginatedList(
+    (params) => orderService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load orders" }
+  );
   const [viewing, setViewing] = useState<Order | null>(null);
   const [open, setOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const loadOrders = async () => {
-    try {
-      const { items } = await orderService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load orders"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await orderService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load orders"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
 
   const openOrder = async (id: number) => {
     setOpen(true);
@@ -209,6 +190,7 @@ export default function OrdersPage() {
         isLoading={isLoading}
         searchPlaceholder="Search by order number..."
         searchColumn="order_number"
+        pagination={pagination}
       />
 
       <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setViewing(null); }}>

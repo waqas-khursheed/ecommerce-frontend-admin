@@ -32,47 +32,39 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { citySchema, countrySchema, geoZoneSchema, stateSchema } from "@/lib/validations/location.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import { cityService, countryService, geoZoneService, productCityService, stateService } from "@/services/location.service";
 import { productService } from "@/services/product.service";
 import type { City, Country, GeoZone, State } from "@/types/location";
 import type { Product } from "@/types/product";
 
 function CountriesTab() {
-  const [rows, setRows] = useState<Country[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => countryService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load countries" }
+  );
   const [editing, setEditing] = useState<Country | null>(null);
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await countryService.list({ limit: 200 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load countries"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await countryService.list({ limit: 200 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load countries"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const handleSubmit = async (formData: FormData) => {
-    setIsSubmitting(true);
     const payload = {
       country_code: String(formData.get("country_code") ?? "").toUpperCase(),
       country_name: String(formData.get("country_name") ?? ""),
     };
+    const { data, errors: validationErrors } = validateForm(countrySchema, payload);
+    if (!data) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
     try {
       if (editing) {
         await countryService.update(editing.id, payload);
@@ -114,7 +106,7 @@ function CountriesTab() {
         cell: ({ row }) => (
           <div className="flex justify-end">
             <RowActions
-              onEdit={() => { setEditing(row.original); setOpen(true); }}
+              onEdit={() => { setEditing(row.original); setErrors({}); setOpen(true); }}
               onDelete={() => setDeletingId(row.original.id)}
             />
           </div>
@@ -128,7 +120,7 @@ function CountriesTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
-          <SheetTrigger render={<Button size="sm" onClick={() => setEditing(null)}><Plus />Add Country</Button>} />
+          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setErrors({}); }}><Plus />Add Country</Button>} />
           <SheetContent>
             <form action={handleSubmit} className="flex h-full flex-col">
               <SheetHeader>
@@ -138,11 +130,26 @@ function CountriesTab() {
               <div className="flex-1 space-y-4 px-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="country_name">Name</Label>
-                  <Input id="country_name" name="country_name" defaultValue={editing?.country_name} required />
+                  <Input
+                    id="country_name"
+                    name="country_name"
+                    defaultValue={editing?.country_name}
+                    aria-invalid={!!errors.country_name}
+                    onChange={() => errors.country_name && setErrors((prev) => ({ ...prev, country_name: "" }))}
+                  />
+                  <FieldError message={errors.country_name} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="country_code">Code (2 letters)</Label>
-                  <Input id="country_code" name="country_code" maxLength={2} defaultValue={editing?.country_code} required />
+                  <Input
+                    id="country_code"
+                    name="country_code"
+                    maxLength={2}
+                    defaultValue={editing?.country_code}
+                    aria-invalid={!!errors.country_code}
+                    onChange={() => errors.country_code && setErrors((prev) => ({ ...prev, country_code: "" }))}
+                  />
+                  <FieldError message={errors.country_code} />
                 </div>
               </div>
               <SheetFooter>
@@ -153,53 +160,47 @@ function CountriesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search countries..." searchColumn="country_name" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search countries..." searchColumn="country_name" pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this country?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function StatesTab() {
-  const [rows, setRows] = useState<State[]>([]);
+  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => stateService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load states" }
+  );
   const [countries, setCountries] = useState<Country[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [editing, setEditing] = useState<State | null>(null);
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await stateService.list({ limit: 200 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load states"));
-    }
-  };
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     (async () => {
       try {
-        const [stateRes, countryRes] = await Promise.all([
-          stateService.list({ limit: 200 }),
-          countryService.list({ limit: 200 }),
-        ]);
-        setRows(stateRes.items);
-        setCountries(countryRes.items);
+        const { items } = await countryService.list({ limit: 200 });
+        setCountries(items);
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load states"));
-      } finally {
-        setIsLoading(false);
+        toast.error(getApiErrorMessage(error, "Failed to load countries"));
       }
     })();
   }, []);
 
   const handleSubmit = async (formData: FormData) => {
-    setIsSubmitting(true);
-    const payload = {
+    const { data: payload, errors: validationErrors } = validateForm(stateSchema, {
       name: String(formData.get("name") ?? ""),
-      country_id: Number(formData.get("country_id") ?? 0),
-    };
+      country_id: String(formData.get("country_id") ?? "0"),
+    });
+    if (!payload) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
     try {
       if (editing) {
         await stateService.update(editing.id, payload);
@@ -241,7 +242,7 @@ function StatesTab() {
         cell: ({ row }) => (
           <div className="flex justify-end">
             <RowActions
-              onEdit={() => { setEditing(row.original); setOpen(true); }}
+              onEdit={() => { setEditing(row.original); setErrors({}); setOpen(true); }}
               onDelete={() => setDeletingId(row.original.id)}
             />
           </div>
@@ -255,7 +256,7 @@ function StatesTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
-          <SheetTrigger render={<Button size="sm" onClick={() => setEditing(null)}><Plus />Add State</Button>} />
+          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setErrors({}); }}><Plus />Add State</Button>} />
           <SheetContent>
             <form action={handleSubmit} className="flex h-full flex-col">
               <SheetHeader>
@@ -265,12 +266,23 @@ function StatesTab() {
               <div className="flex-1 space-y-4 px-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="name">Name</Label>
-                  <Input id="name" name="name" defaultValue={editing?.name} required />
+                  <Input
+                    id="name"
+                    name="name"
+                    defaultValue={editing?.name}
+                    aria-invalid={!!errors.name}
+                    onChange={() => errors.name && setErrors((prev) => ({ ...prev, name: "" }))}
+                  />
+                  <FieldError message={errors.name} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="country_id">Country</Label>
-                  <Select name="country_id" defaultValue={editing?.country_id ? String(editing.country_id) : undefined}>
-                    <SelectTrigger id="country_id" className="w-full">
+                  <Select
+                    name="country_id"
+                    defaultValue={editing?.country_id ? String(editing.country_id) : undefined}
+                    onValueChange={() => errors.country_id && setErrors((prev) => ({ ...prev, country_id: "" }))}
+                  >
+                    <SelectTrigger id="country_id" className="w-full" aria-invalid={!!errors.country_id}>
                       <SelectValue placeholder="Select country" />
                     </SelectTrigger>
                     <SelectContent>
@@ -279,6 +291,7 @@ function StatesTab() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FieldError message={errors.country_id} />
                 </div>
               </div>
               <SheetFooter>
@@ -289,53 +302,47 @@ function StatesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search states..." searchColumn="name" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search states..." searchColumn="name" pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this state?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function CitiesTab() {
-  const [rows, setRows] = useState<City[]>([]);
+  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => cityService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load cities" }
+  );
   const [states, setStates] = useState<State[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [editing, setEditing] = useState<City | null>(null);
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await cityService.list({ limit: 200 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load cities"));
-    }
-  };
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     (async () => {
       try {
-        const [cityRes, stateRes] = await Promise.all([
-          cityService.list({ limit: 200 }),
-          stateService.list({ limit: 200 }),
-        ]);
-        setRows(cityRes.items);
-        setStates(stateRes.items);
+        const { items } = await stateService.list({ limit: 200 });
+        setStates(items);
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load cities"));
-      } finally {
-        setIsLoading(false);
+        toast.error(getApiErrorMessage(error, "Failed to load states"));
       }
     })();
   }, []);
 
   const handleSubmit = async (formData: FormData) => {
-    setIsSubmitting(true);
-    const payload = {
+    const { data: payload, errors: validationErrors } = validateForm(citySchema, {
       name: String(formData.get("name") ?? ""),
-      state_id: Number(formData.get("state_id") ?? 0),
-    };
+      state_id: String(formData.get("state_id") ?? "0"),
+    });
+    if (!payload) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
     try {
       if (editing) {
         await cityService.update(editing.id, payload);
@@ -377,7 +384,7 @@ function CitiesTab() {
         cell: ({ row }) => (
           <div className="flex justify-end">
             <RowActions
-              onEdit={() => { setEditing(row.original); setOpen(true); }}
+              onEdit={() => { setEditing(row.original); setErrors({}); setOpen(true); }}
               onDelete={() => setDeletingId(row.original.id)}
             />
           </div>
@@ -391,7 +398,7 @@ function CitiesTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
-          <SheetTrigger render={<Button size="sm" onClick={() => setEditing(null)}><Plus />Add City</Button>} />
+          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setErrors({}); }}><Plus />Add City</Button>} />
           <SheetContent>
             <form action={handleSubmit} className="flex h-full flex-col">
               <SheetHeader>
@@ -401,12 +408,23 @@ function CitiesTab() {
               <div className="flex-1 space-y-4 px-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="name">Name</Label>
-                  <Input id="name" name="name" defaultValue={editing?.name} required />
+                  <Input
+                    id="name"
+                    name="name"
+                    defaultValue={editing?.name}
+                    aria-invalid={!!errors.name}
+                    onChange={() => errors.name && setErrors((prev) => ({ ...prev, name: "" }))}
+                  />
+                  <FieldError message={errors.name} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="state_id">State</Label>
-                  <Select name="state_id" defaultValue={editing?.state_id ? String(editing.state_id) : undefined}>
-                    <SelectTrigger id="state_id" className="w-full">
+                  <Select
+                    name="state_id"
+                    defaultValue={editing?.state_id ? String(editing.state_id) : undefined}
+                    onValueChange={() => errors.state_id && setErrors((prev) => ({ ...prev, state_id: "" }))}
+                  >
+                    <SelectTrigger id="state_id" className="w-full" aria-invalid={!!errors.state_id}>
                       <SelectValue placeholder="Select state" />
                     </SelectTrigger>
                     <SelectContent>
@@ -415,6 +433,7 @@ function CitiesTab() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FieldError message={errors.state_id} />
                 </div>
               </div>
               <SheetFooter>
@@ -425,48 +444,35 @@ function CitiesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search cities..." searchColumn="name" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search cities..." searchColumn="name" pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this city?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function GeoZonesTab() {
-  const [rows, setRows] = useState<GeoZone[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => geoZoneService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load geo zones" }
+  );
   const [editing, setEditing] = useState<GeoZone | null>(null);
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await geoZoneService.list({ limit: 200 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load geo zones"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await geoZoneService.list({ limit: 200 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load geo zones"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const handleSubmit = async (formData: FormData) => {
-    setIsSubmitting(true);
-    const payload = {
+    const { data: payload, errors: validationErrors } = validateForm(geoZoneSchema, {
       code: String(formData.get("code") ?? ""),
       name: String(formData.get("name") ?? ""),
-    };
+    });
+    if (!payload) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
     try {
       if (editing) {
         await geoZoneService.update(editing.id, payload);
@@ -508,7 +514,7 @@ function GeoZonesTab() {
         cell: ({ row }) => (
           <div className="flex justify-end">
             <RowActions
-              onEdit={() => { setEditing(row.original); setOpen(true); }}
+              onEdit={() => { setEditing(row.original); setErrors({}); setOpen(true); }}
               onDelete={() => setDeletingId(row.original.id)}
             />
           </div>
@@ -522,7 +528,7 @@ function GeoZonesTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
-          <SheetTrigger render={<Button size="sm" onClick={() => setEditing(null)}><Plus />Add Zone</Button>} />
+          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setErrors({}); }}><Plus />Add Zone</Button>} />
           <SheetContent>
             <form action={handleSubmit} className="flex h-full flex-col">
               <SheetHeader>
@@ -532,11 +538,25 @@ function GeoZonesTab() {
               <div className="flex-1 space-y-4 px-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="name">Name</Label>
-                  <Input id="name" name="name" defaultValue={editing?.name} required />
+                  <Input
+                    id="name"
+                    name="name"
+                    defaultValue={editing?.name}
+                    aria-invalid={!!errors.name}
+                    onChange={() => errors.name && setErrors((prev) => ({ ...prev, name: "" }))}
+                  />
+                  <FieldError message={errors.name} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="code">Code</Label>
-                  <Input id="code" name="code" defaultValue={editing?.code} required />
+                  <Input
+                    id="code"
+                    name="code"
+                    defaultValue={editing?.code}
+                    aria-invalid={!!errors.code}
+                    onChange={() => errors.code && setErrors((prev) => ({ ...prev, code: "" }))}
+                  />
+                  <FieldError message={errors.code} />
                 </div>
               </div>
               <SheetFooter>
@@ -547,7 +567,7 @@ function GeoZonesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search zones..." searchColumn="name" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search zones..." searchColumn="name" pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this zone?" onConfirm={handleDelete} />
     </div>
   );

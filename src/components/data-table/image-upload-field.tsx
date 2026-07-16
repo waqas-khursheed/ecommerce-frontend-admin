@@ -4,12 +4,15 @@ import { useRef, useState } from "react";
 import { ImageOff, Upload } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { FieldError } from "@/components/ui/field-error";
+import { cn } from "@/lib/utils";
 
 interface ImageUploadFieldProps {
   id: string;
   label: string;
   existingImageUrl?: string | null;
   required?: boolean;
+  error?: string;
   onFileChange: (file: File | null) => void;
 }
 
@@ -23,6 +26,7 @@ export function ImageUploadField({
   label,
   existingImageUrl,
   required,
+  error,
   onFileChange,
 }: ImageUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null);
@@ -43,7 +47,12 @@ export function ImageUploadField({
         {required && <span className="text-destructive"> *</span>}
       </Label>
       <div className="flex items-center gap-3">
-        <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted">
+        <div
+          className={cn(
+            "flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-md border bg-muted",
+            error && "border-destructive ring-3 ring-destructive/20"
+          )}
+        >
           {displayUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={displayUrl} alt="" className="size-full object-cover" />
@@ -64,6 +73,7 @@ export function ImageUploadField({
           onChange={handleChange}
         />
       </div>
+      <FieldError message={error} />
     </div>
   );
 }

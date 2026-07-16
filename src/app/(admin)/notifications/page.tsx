@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Bell, MessageSquareText, ShoppingCart, Trash2 } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight, MessageSquareText, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -9,8 +8,8 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import { notificationService } from "@/services/notification.service";
-import type { Notification } from "@/types/notification";
 
 function iconFor(tableName: string) {
   const key = tableName.toLowerCase();
@@ -20,21 +19,10 @@ function iconFor(tableName: string) {
 }
 
 export default function NotificationsPage() {
-  const [rows, setRows] = useState<Notification[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await notificationService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load notifications"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const { items: rows, setItems: setRows, isLoading, pagination } = usePaginatedList(
+    (params) => notificationService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load notifications" }
+  );
 
   const markAllRead = async () => {
     try {
@@ -119,6 +107,34 @@ export default function NotificationsPage() {
           })
         )}
       </div>
+
+      {pagination && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            Page {pagination.page} of {pagination.totalPages} · {pagination.total} total
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => pagination.onPageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => pagination.onPageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

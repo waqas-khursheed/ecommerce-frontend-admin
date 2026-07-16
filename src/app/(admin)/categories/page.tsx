@@ -36,43 +36,48 @@ import {
 import { categoryService } from "@/services/category.service";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { categorySchema } from "@/lib/validations/category.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Category } from "@/types/category";
 
 export default function CategoriesPage() {
-  const [rows, setRows] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, isLoading, reload: loadCategories, pagination } = usePaginatedList(
+    (params) => categoryService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load categories" }
+  );
   const [editing, setEditing] = useState<Category | null>(null);
   const [open, setOpen] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [iconFile, setIconFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
-  const loadCategories = useCallback(async () => {
+  // The "Parent category" picker needs every category, not just the current
+  // table page — kept as a separate, un-paginated fetch from the table rows.
+  const [allCategories, setAllCategories] = useState<Category[]>([]);
+  const loadAllCategories = useCallback(async () => {
     try {
       const { items } = await categoryService.list({ limit: 100 });
-      setRows(items);
+      setAllCategories(items);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to load categories"));
-    } finally {
-      setIsLoading(false);
     }
   }, []);
-
   useEffect(() => {
     (async () => {
       try {
         const { items } = await categoryService.list({ limit: 100 });
-        setRows(items);
+        setAllCategories(items);
       } catch (error) {
         toast.error(getApiErrorMessage(error, "Failed to load categories"));
-      } finally {
-        setIsLoading(false);
       }
     })();
   }, []);
 
-  const parentTitleById = useMemo(() => new Map(rows.map((r) => [r.id, r.title])), [rows]);
+  const parentTitleById = useMemo(() => new Map(allCategories.map((r) => [r.id, r.title])), [allCategories]);
 
   const columns = useMemo<ColumnDef<Category, unknown>[]>(
     () => [
@@ -101,6 +106,7 @@ export default function CategoriesPage() {
                 setEditing(row.original);
                 setImageFile(null);
                 setIconFile(null);
+                setErrors({});
                 setOpen(true);
               }}
               onDelete={() => setDeletingId(row.original.id)}
@@ -113,6 +119,17 @@ export default function CategoriesPage() {
   );
 
   const handleSubmit = async (formData: FormData) => {
+    const { data, errors: validationErrors } = validateForm(categorySchema, {
+      title: String(formData.get("title") ?? ""),
+      status: String(formData.get("status") ?? "1"),
+      order_by: String(formData.get("order_by") ?? "0"),
+    });
+    if (!data) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
     setIsSubmitting(true);
 
     const payload = new FormData();
@@ -141,7 +158,7 @@ export default function CategoriesPage() {
       }
       setOpen(false);
       setEditing(null);
-      await loadCategories();
+      await Promise.all([loadCategories(), loadAllCategories()]);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to save category"));
     } finally {
@@ -156,7 +173,7 @@ export default function CategoriesPage() {
     try {
       await categoryService.remove(deletingId);
       toast.success(`"${target?.title}" deleted`);
-      await loadCategories();
+      await Promise.all([loadCategories(), loadAllCategories()]);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to delete category"));
     } finally {
@@ -185,6 +202,7 @@ export default function CategoriesPage() {
                     setEditing(null);
                     setImageFile(null);
                     setIconFile(null);
+                    setErrors({});
                   }}
                 >
                   <Plus />
@@ -203,7 +221,14 @@ export default function CategoriesPage() {
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="title">Name</Label>
-                    <Input id="title" name="title" defaultValue={editing?.title} required />
+                    <Input
+                      id="title"
+                      name="title"
+                      defaultValue={editing?.title}
+                      aria-invalid={!!errors.title}
+                      onChange={() => errors.title && setErrors((prev) => ({ ...prev, title: "" }))}
+                    />
+                    <FieldError message={errors.title} />
                   </div>
 
                   <div className="space-y-1.5">
@@ -219,7 +244,7 @@ export default function CategoriesPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="0">None (top-level)</SelectItem>
-                        {rows
+                        {allCategories
                           .filter((r) => r.id !== editing?.id)
                           .map((r) => (
                             <SelectItem key={r.id} value={String(r.id)}>
@@ -246,7 +271,15 @@ export default function CategoriesPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="order_by">Display order</Label>
-                      <Input id="order_by" name="order_by" type="number" defaultValue={editing?.order_by ?? 0} />
+                      <Input
+                        id="order_by"
+                        name="order_by"
+                        type="number"
+                        defaultValue={editing?.order_by ?? 0}
+                        aria-invalid={!!errors.order_by}
+                        onChange={() => errors.order_by && setErrors((prev) => ({ ...prev, order_by: "" }))}
+                      />
+                      <FieldError message={errors.order_by} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="status">Status</Label>
@@ -304,6 +337,7 @@ export default function CategoriesPage() {
         isLoading={isLoading}
         searchPlaceholder="Search categories..."
         searchColumn="title"
+        pagination={pagination}
       />
 
       <ConfirmDeleteDialog

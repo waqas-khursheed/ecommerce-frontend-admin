@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -34,6 +34,10 @@ import { stockService } from "@/services/stock.service";
 import { productService } from "@/services/product.service";
 import { attributeService, attributeItemService } from "@/services/attribute.service";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { stockSchema } from "@/lib/validations/stock.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Stock } from "@/types/stock";
 import type { Product } from "@/types/product";
 import type { Attribute, AttributeItem } from "@/types/attribute";
@@ -73,48 +77,30 @@ async function loadAttributeGroups(attributes: Attribute[]) {
 }
 
 export default function StockPage() {
-  const [rows, setRows] = useState<Stock[]>([]);
+  const { items: rows, isLoading, reload: loadAll, pagination } = usePaginatedList(
+    (params) => stockService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load stock" }
+  );
   const [products, setProducts] = useState<Product[]>([]);
   const [colorItems, setColorItems] = useState<AttributeItem[]>([]);
   const [sizeItems, setSizeItems] = useState<AttributeItem[]>([]);
   const [fittingItems, setFittingItems] = useState<AttributeItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   const [editing, setEditing] = useState<Stock | null>(null);
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
-  const loadAll = useCallback(async () => {
-    try {
-      const [stocksRes, productsRes, attributesRes] = await Promise.all([
-        stockService.list({ limit: 100 }),
-        productService.list({ limit: 100 }),
-        attributeService.list({ limit: 100 }),
-      ]);
-      setRows(stocksRes.items);
-      setProducts(productsRes.items);
-
-      const { colors, sizes, fittings } = await loadAttributeGroups(attributesRes.items);
-      setColorItems(colors);
-      setSizeItems(sizes);
-      setFittingItems(fittings);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load stock"));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
+  // Product/variant pickers used by the stock form — fetched once,
+  // independent of which page of the (paginated) stock table is showing.
   useEffect(() => {
     (async () => {
       try {
-        const [stocksRes, productsRes, attributesRes] = await Promise.all([
-          stockService.list({ limit: 100 }),
+        const [productsRes, attributesRes] = await Promise.all([
           productService.list({ limit: 100 }),
           attributeService.list({ limit: 100 }),
         ]);
-        setRows(stocksRes.items);
         setProducts(productsRes.items);
 
         const { colors, sizes, fittings } = await loadAttributeGroups(attributesRes.items);
@@ -122,9 +108,7 @@ export default function StockPage() {
         setSizeItems(sizes);
         setFittingItems(fittings);
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load stock"));
-      } finally {
-        setIsLoading(false);
+        toast.error(getApiErrorMessage(error, "Failed to load stock form data"));
       }
     })();
   }, []);
@@ -167,6 +151,7 @@ export default function StockPage() {
             <RowActions
               onEdit={() => {
                 setEditing(row.original);
+                setErrors({});
                 setOpen(true);
               }}
               onDelete={() => setDeletingId(row.original.id)}
@@ -179,28 +164,39 @@ export default function StockPage() {
   );
 
   const handleSubmit = async (formData: FormData) => {
+    const orNull = (v: FormDataEntryValue | null) => (v ? String(v) : null);
+
+    const { data: payload, errors: validationErrors } = validateForm(stockSchema, {
+      product_id: String(formData.get("product_id") ?? ""),
+      stock_qty: orNull(formData.get("stock_qty")),
+      stock_price: orNull(formData.get("stock_price")),
+      stock_dis_price: String(formData.get("stock_dis_price") ?? "0"),
+      stock_dis_percentage: String(formData.get("stock_dis_percentage") ?? "0"),
+      weight: orNull(formData.get("weight")),
+      color_id: orNull(formData.get("color_id")),
+      size_id: orNull(formData.get("size_id")),
+      fitting_id: orNull(formData.get("fitting_id")),
+    });
+    if (!payload) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
     setIsSubmitting(true);
 
-    const toNumberOrNull = (v: FormDataEntryValue | null) => (v ? Number(v) : null);
-
-    const payload = {
-      product_id: Number(formData.get("product_id")),
-      stock_qty: toNumberOrNull(formData.get("stock_qty")),
-      stock_price: toNumberOrNull(formData.get("stock_price")) ?? undefined,
-      stock_dis_price: Number(formData.get("stock_dis_price") ?? 0),
-      stock_dis_percentage: Number(formData.get("stock_dis_percentage") ?? 0),
-      weight: toNumberOrNull(formData.get("weight")) ?? undefined,
-      color_id: toNumberOrNull(formData.get("color_id")),
-      size_id: toNumberOrNull(formData.get("size_id")),
-      fitting_id: toNumberOrNull(formData.get("fitting_id")),
+    const submitPayload = {
+      ...payload,
+      stock_price: payload.stock_price ?? undefined,
+      weight: payload.weight ?? undefined,
     };
 
     try {
       if (editing) {
-        await stockService.update(editing.id, payload);
+        await stockService.update(editing.id, submitPayload);
         toast.success("Stock updated");
       } else {
-        await stockService.create(payload);
+        await stockService.create(submitPayload);
         toast.success("Stock created");
       }
       setOpen(false);
@@ -243,7 +239,7 @@ export default function StockPage() {
           >
             <SheetTrigger
               render={
-                <Button disabled={products.length === 0} onClick={() => setEditing(null)}>
+                <Button disabled={products.length === 0} onClick={() => { setEditing(null); setErrors({}); }}>
                   <Plus />
                   Add Stock
                 </Button>
@@ -340,28 +336,73 @@ export default function StockPage() {
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="stock_qty">Quantity (blank = unlimited)</Label>
-                      <Input id="stock_qty" name="stock_qty" type="number" defaultValue={editing?.stock_qty ?? ""} />
+                      <Input
+                        id="stock_qty"
+                        name="stock_qty"
+                        type="number"
+                        defaultValue={editing?.stock_qty ?? ""}
+                        aria-invalid={!!errors.stock_qty}
+                        onChange={() => errors.stock_qty && setErrors((prev) => ({ ...prev, stock_qty: "" }))}
+                      />
+                      <FieldError message={errors.stock_qty} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="stock_price">Price override</Label>
-                      <Input id="stock_price" name="stock_price" type="number" step="0.01" defaultValue={editing?.stock_price ?? ""} />
+                      <Input
+                        id="stock_price"
+                        name="stock_price"
+                        type="number"
+                        step="0.01"
+                        defaultValue={editing?.stock_price ?? ""}
+                        aria-invalid={!!errors.stock_price}
+                        onChange={() => errors.stock_price && setErrors((prev) => ({ ...prev, stock_price: "" }))}
+                      />
+                      <FieldError message={errors.stock_price} />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
                       <Label htmlFor="stock_dis_price">Discount price</Label>
-                      <Input id="stock_dis_price" name="stock_dis_price" type="number" step="0.01" defaultValue={editing?.stock_dis_price ?? 0} />
+                      <Input
+                        id="stock_dis_price"
+                        name="stock_dis_price"
+                        type="number"
+                        step="0.01"
+                        defaultValue={editing?.stock_dis_price ?? 0}
+                        aria-invalid={!!errors.stock_dis_price}
+                        onChange={() => errors.stock_dis_price && setErrors((prev) => ({ ...prev, stock_dis_price: "" }))}
+                      />
+                      <FieldError message={errors.stock_dis_price} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="stock_dis_percentage">Discount %</Label>
-                      <Input id="stock_dis_percentage" name="stock_dis_percentage" type="number" defaultValue={editing?.stock_dis_percentage ?? 0} />
+                      <Input
+                        id="stock_dis_percentage"
+                        name="stock_dis_percentage"
+                        type="number"
+                        defaultValue={editing?.stock_dis_percentage ?? 0}
+                        aria-invalid={!!errors.stock_dis_percentage}
+                        onChange={() =>
+                          errors.stock_dis_percentage && setErrors((prev) => ({ ...prev, stock_dis_percentage: "" }))
+                        }
+                      />
+                      <FieldError message={errors.stock_dis_percentage} />
                     </div>
                   </div>
 
                   <div className="space-y-1.5">
                     <Label htmlFor="weight">Weight</Label>
-                    <Input id="weight" name="weight" type="number" step="0.01" defaultValue={editing?.weight ?? ""} />
+                    <Input
+                      id="weight"
+                      name="weight"
+                      type="number"
+                      step="0.01"
+                      defaultValue={editing?.weight ?? ""}
+                      aria-invalid={!!errors.weight}
+                      onChange={() => errors.weight && setErrors((prev) => ({ ...prev, weight: "" }))}
+                    />
+                    <FieldError message={errors.weight} />
                   </div>
                 </div>
                 <SheetFooter>
@@ -382,6 +423,7 @@ export default function StockPage() {
         isLoading={isLoading}
         searchPlaceholder="Search by product..."
         searchColumn="product"
+        pagination={pagination}
       />
 
       <ConfirmDeleteDialog

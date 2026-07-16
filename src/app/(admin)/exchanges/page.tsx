@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye } from "lucide-react";
 import { toast } from "sonner";
@@ -23,36 +23,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { exchangeService } from "@/services/exchange.service";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Exchange } from "@/types/exchange";
 
 export default function ExchangesPage() {
-  const [rows, setRows] = useState<Exchange[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, setItems: setRows, isLoading, reload: loadExchanges, pagination } = usePaginatedList(
+    (params) => exchangeService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load exchange requests" }
+  );
   const [viewing, setViewing] = useState<Exchange | null>(null);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const loadExchanges = async () => {
-    try {
-      const { items } = await exchangeService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load exchange requests"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await exchangeService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load exchange requests"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
 
   const openExchange = async (row: Exchange) => {
     setViewing(row);
@@ -130,6 +111,7 @@ export default function ExchangesPage() {
         isLoading={isLoading}
         searchPlaceholder="Search by customer..."
         searchColumn="customer_name"
+        pagination={pagination}
       />
 
       <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setViewing(null); }}>

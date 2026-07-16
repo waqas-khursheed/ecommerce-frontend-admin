@@ -35,13 +35,19 @@ import {
 import { couponService } from "@/services/coupon.service";
 import { categoryService } from "@/services/category.service";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { couponSchema } from "@/lib/validations/coupon.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Coupon, CouponUsage } from "@/types/coupon";
 import type { Category } from "@/types/category";
 
 export default function CouponsPage() {
-  const [rows, setRows] = useState<Coupon[]>([]);
+  const { items: rows, isLoading, reload: loadCoupons, pagination } = usePaginatedList(
+    (params) => couponService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load coupons" }
+  );
   const [categories, setCategories] = useState<Category[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [editing, setEditing] = useState<Coupon | null>(null);
   const [open, setOpen] = useState(false);
   const [applyToAll, setApplyToAll] = useState(true);
@@ -52,29 +58,15 @@ export default function CouponsPage() {
   const [usages, setUsages] = useState<CouponUsage[]>([]);
   const [usagesOpen, setUsagesOpen] = useState(false);
   const [isLoadingUsages, setIsLoadingUsages] = useState(false);
-
-  const loadCoupons = async () => {
-    try {
-      const { items } = await couponService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load coupons"));
-    }
-  };
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     (async () => {
       try {
-        const [couponsRes, categoriesRes] = await Promise.all([
-          couponService.list({ limit: 100 }),
-          categoryService.list({ limit: 100 }),
-        ]);
-        setRows(couponsRes.items);
-        setCategories(categoriesRes.items);
+        const { items } = await categoryService.list({ limit: 100 });
+        setCategories(items);
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load coupons"));
-      } finally {
-        setIsLoading(false);
+        toast.error(getApiErrorMessage(error, "Failed to load categories"));
       }
     })();
   }, []);
@@ -83,6 +75,7 @@ export default function CouponsPage() {
     setEditing(null);
     setApplyToAll(true);
     setSelectedCategoryIds([]);
+    setErrors({});
     setOpen(true);
   };
 
@@ -90,6 +83,7 @@ export default function CouponsPage() {
     setEditing(coupon);
     setApplyToAll(coupon.to_all !== 0);
     setSelectedCategoryIds((coupon.metaCouponCategories ?? []).map((m) => m.cat_id));
+    setErrors({});
     setOpen(true);
 
     // The list endpoint doesn't include metaCouponCategories (only getById
@@ -124,10 +118,25 @@ export default function CouponsPage() {
   };
 
   const handleSubmit = async (formData: FormData) => {
-    setIsSubmitting(true);
     const expiresAt = String(formData.get("expires_at") ?? "");
     const usageLimit = String(formData.get("usage_limit") ?? "");
     const minOrderAmount = String(formData.get("min_order_amount") ?? "");
+
+    const { data, errors: validationErrors } = validateForm(couponSchema, {
+      code: String(formData.get("code") ?? ""),
+      percentage: String(formData.get("percentage") ?? ""),
+      status: String(formData.get("status") ?? "1"),
+      usage_limit: usageLimit || null,
+      min_order_amount: minOrderAmount || null,
+      expires_at: expiresAt || null,
+    });
+    if (!data) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
 
     const payload = {
       code: String(formData.get("code") ?? ""),
@@ -252,7 +261,15 @@ export default function CouponsPage() {
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="code">Code</Label>
-                    <Input id="code" name="code" placeholder="SUMMER25" defaultValue={editing?.code} required />
+                    <Input
+                      id="code"
+                      name="code"
+                      placeholder="SUMMER25"
+                      defaultValue={editing?.code}
+                      aria-invalid={!!errors.code}
+                      onChange={() => errors.code && setErrors((prev) => ({ ...prev, code: "" }))}
+                    />
+                    <FieldError message={errors.code} />
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
@@ -264,8 +281,10 @@ export default function CouponsPage() {
                         step="0.01"
                         max={100}
                         defaultValue={editing?.percentage}
-                        required
+                        aria-invalid={!!errors.percentage}
+                        onChange={() => errors.percentage && setErrors((prev) => ({ ...prev, percentage: "" }))}
                       />
+                      <FieldError message={errors.percentage} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="status">Status</Label>
@@ -289,7 +308,10 @@ export default function CouponsPage() {
                         type="number"
                         placeholder="Unlimited"
                         defaultValue={editing?.usage_limit ?? ""}
+                        aria-invalid={!!errors.usage_limit}
+                        onChange={() => errors.usage_limit && setErrors((prev) => ({ ...prev, usage_limit: "" }))}
                       />
+                      <FieldError message={errors.usage_limit} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="min_order_amount">Min. order amount</Label>
@@ -299,7 +321,12 @@ export default function CouponsPage() {
                         type="number"
                         step="0.01"
                         defaultValue={editing?.min_order_amount ?? ""}
+                        aria-invalid={!!errors.min_order_amount}
+                        onChange={() =>
+                          errors.min_order_amount && setErrors((prev) => ({ ...prev, min_order_amount: "" }))
+                        }
                       />
+                      <FieldError message={errors.min_order_amount} />
                     </div>
                   </div>
                   <div className="space-y-1.5">
@@ -309,7 +336,10 @@ export default function CouponsPage() {
                       name="expires_at"
                       type="date"
                       defaultValue={editing?.expires_at ? editing.expires_at.slice(0, 10) : ""}
+                      aria-invalid={!!errors.expires_at}
+                      onChange={() => errors.expires_at && setErrors((prev) => ({ ...prev, expires_at: "" }))}
                     />
+                    <FieldError message={errors.expires_at} />
                   </div>
 
                   <div className="space-y-2 rounded-md border p-3">
@@ -353,6 +383,7 @@ export default function CouponsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search coupons..."
         searchColumn="code"
+        pagination={pagination}
       />
 
       <ConfirmDeleteDialog

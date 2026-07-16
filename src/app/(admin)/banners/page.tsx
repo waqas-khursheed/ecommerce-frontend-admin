@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
-import { GalleryHorizontal, Plus } from "lucide-react";
+import { useState, type ReactNode } from "react";
+import { ChevronLeft, ChevronRight, GalleryHorizontal, Plus } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -28,6 +28,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Loader2 } from "lucide-react";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { slideBannerSchema, sideBannerSchema } from "@/lib/validations/banner.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
+import type { PaginationMeta } from "@/types/api";
 import type { SideBannerItem, SlideBanner } from "@/types/banner";
 import {
   applicationHomeBannerService,
@@ -49,15 +54,16 @@ interface BannerConfig<T extends BannerBase> {
   label: string;
   folder: string;
   service: {
-    list: (params?: { limit: number }) => Promise<{ items: T[] }>;
+    list: (params?: { page?: number; limit?: number }) => Promise<{ items: T[]; meta: PaginationMeta }>;
     create: (payload: FormData) => Promise<T>;
     update: (id: number, payload: FormData) => Promise<T>;
     remove: (id: number) => Promise<unknown>;
     toggleStatus: (id: number) => Promise<T>;
   };
   extraFields?: {
-    render: (item: T | null) => ReactNode;
+    render: (item: T | null, errors: FieldErrors, onFieldChange: (name: string) => void) => ReactNode;
     appendToForm: (formData: FormData, payload: FormData) => void;
+    getErrors: (formData: FormData) => FieldErrors;
   };
 }
 
@@ -68,31 +74,66 @@ const TABS: BannerConfig<BannerBase & Record<string, unknown>>[] = [
     folder: "slides",
     service: slideService as unknown as BannerConfig<BannerBase & Record<string, unknown>>["service"],
     extraFields: {
-      render: (item) => {
+      render: (item, errors, onFieldChange) => {
         const slide = item as unknown as SlideBanner | null;
         return (
           <>
             <div className="space-y-1.5">
               <Label htmlFor="Heading">Heading</Label>
-              <Input id="Heading" name="Heading" defaultValue={slide?.Heading ?? ""} />
+              <Input
+                id="Heading"
+                name="Heading"
+                defaultValue={slide?.Heading ?? ""}
+                aria-invalid={!!errors.Heading}
+                onChange={() => onFieldChange("Heading")}
+              />
+              <FieldError message={errors.Heading} />
             </div>
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1.5">
                 <Label htmlFor="bullet_1">Bullet 1</Label>
-                <Input id="bullet_1" name="bullet_1" defaultValue={slide?.bullet_1 ?? ""} />
+                <Input
+                  id="bullet_1"
+                  name="bullet_1"
+                  defaultValue={slide?.bullet_1 ?? ""}
+                  aria-invalid={!!errors.bullet_1}
+                  onChange={() => onFieldChange("bullet_1")}
+                />
+                <FieldError message={errors.bullet_1} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bullet_2">Bullet 2</Label>
-                <Input id="bullet_2" name="bullet_2" defaultValue={slide?.bullet_2 ?? ""} />
+                <Input
+                  id="bullet_2"
+                  name="bullet_2"
+                  defaultValue={slide?.bullet_2 ?? ""}
+                  aria-invalid={!!errors.bullet_2}
+                  onChange={() => onFieldChange("bullet_2")}
+                />
+                <FieldError message={errors.bullet_2} />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="bullet_3">Bullet 3</Label>
-                <Input id="bullet_3" name="bullet_3" defaultValue={slide?.bullet_3 ?? ""} />
+                <Input
+                  id="bullet_3"
+                  name="bullet_3"
+                  defaultValue={slide?.bullet_3 ?? ""}
+                  aria-invalid={!!errors.bullet_3}
+                  onChange={() => onFieldChange("bullet_3")}
+                />
+                <FieldError message={errors.bullet_3} />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="link">Link</Label>
-              <Input id="link" name="link" defaultValue={slide?.link ?? ""} />
+              <Input
+                id="link"
+                name="link"
+                defaultValue={slide?.link ?? ""}
+                aria-invalid={!!errors.link}
+                onChange={() => onFieldChange("link")}
+              />
+              <FieldError message={errors.link} />
             </div>
           </>
         );
@@ -104,6 +145,14 @@ const TABS: BannerConfig<BannerBase & Record<string, unknown>>[] = [
         payload.append("bullet_3", String(formData.get("bullet_3") ?? ""));
         payload.append("link", String(formData.get("link") ?? ""));
       },
+      getErrors: (formData) =>
+        validateForm(slideBannerSchema, {
+          Heading: String(formData.get("Heading") ?? ""),
+          bullet_1: String(formData.get("bullet_1") ?? ""),
+          bullet_2: String(formData.get("bullet_2") ?? ""),
+          bullet_3: String(formData.get("bullet_3") ?? ""),
+          link: String(formData.get("link") ?? ""),
+        }).errors ?? {},
     },
   },
   {
@@ -126,18 +175,27 @@ const TABS: BannerConfig<BannerBase & Record<string, unknown>>[] = [
     folder: "side-banners",
     service: sideBannerService as unknown as BannerConfig<BannerBase & Record<string, unknown>>["service"],
     extraFields: {
-      render: (item) => {
+      render: (item, errors, onFieldChange) => {
         const side = item as unknown as SideBannerItem | null;
         return (
           <div className="space-y-1.5">
             <Label htmlFor="type">Type</Label>
-            <Input id="type" name="type" defaultValue={side?.type ?? ""} required />
+            <Input
+              id="type"
+              name="type"
+              defaultValue={side?.type ?? ""}
+              aria-invalid={!!errors.type}
+              onChange={() => onFieldChange("type")}
+            />
+            <FieldError message={errors.type} />
           </div>
         );
       },
       appendToForm: (formData, payload) => {
         payload.append("type", String(formData.get("type") ?? ""));
       },
+      getErrors: (formData) =>
+        validateForm(sideBannerSchema, { type: String(formData.get("type") ?? "") }).errors ?? {},
     },
   },
   {
@@ -155,42 +213,34 @@ const TABS: BannerConfig<BannerBase & Record<string, unknown>>[] = [
 ];
 
 function BannerTab({ config }: { config: BannerConfig<BannerBase & Record<string, unknown>> }) {
-  const [rows, setRows] = useState<(BannerBase & Record<string, unknown>)[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    items: rows,
+    setItems: setRows,
+    isLoading,
+    reload: load,
+    pagination,
+  } = usePaginatedList((params) => config.service.list(params), {
+    pageSize: 10,
+    errorMessage: `Failed to load ${config.label.toLowerCase()}`,
+  });
   const [editing, setEditing] = useState<(BannerBase & Record<string, unknown>) | null>(null);
   const [open, setOpen] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await config.service.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, `Failed to load ${config.label.toLowerCase()}`));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await config.service.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, `Failed to load ${config.label.toLowerCase()}`));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [config.value]);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const handleSubmit = async (formData: FormData) => {
-    if (!editing && !imageFile) {
-      toast.error("Image is required");
+    const extraErrors = config.extraFields?.getErrors(formData) ?? {};
+    const imageErrors: FieldErrors = {};
+    if (!editing && !imageFile) imageErrors.image = "Image is required";
+
+    if (Object.keys(extraErrors).length > 0 || Object.keys(imageErrors).length > 0) {
+      setErrors({ ...extraErrors, ...imageErrors });
+      toast.error("Please fix the highlighted fields");
       return;
     }
+    setErrors({});
     setIsSubmitting(true);
     const payload = new FormData();
     payload.append("status", formData.get("status") ? "1" : "0");
@@ -257,6 +307,7 @@ function BannerTab({ config }: { config: BannerConfig<BannerBase & Record<string
                 onClick={() => {
                   setEditing(null);
                   setImageFile(null);
+                  setErrors({});
                 }}
               >
                 <Plus />
@@ -277,10 +328,16 @@ function BannerTab({ config }: { config: BannerConfig<BannerBase & Record<string
                   id="image"
                   label="Image"
                   required={!editing}
+                  error={errors.image}
                   existingImageUrl={uploadUrl(config.folder, editing?.image as string | undefined)}
-                  onFileChange={setImageFile}
+                  onFileChange={(f) => {
+                    setImageFile(f);
+                    if (f && errors.image) setErrors((prev) => ({ ...prev, image: "" }));
+                  }}
                 />
-                {config.extraFields?.render(editing)}
+                {config.extraFields?.render(editing, errors, (name) =>
+                  setErrors((prev) => (prev[name] ? { ...prev, [name]: "" } : prev))
+                )}
                 <div className="flex items-center gap-2">
                   <Checkbox id="status" name="status" defaultChecked={(editing?.status ?? 1) === 1} />
                   <Label htmlFor="status">Active</Label>
@@ -333,6 +390,7 @@ function BannerTab({ config }: { config: BannerConfig<BannerBase & Record<string
                   onEdit={() => {
                     setEditing(item);
                     setImageFile(null);
+                    setErrors({});
                     setOpen(true);
                   }}
                   onDelete={() => setDeletingId(item.id)}
@@ -340,6 +398,34 @@ function BannerTab({ config }: { config: BannerConfig<BannerBase & Record<string
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {pagination && (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            Page {pagination.page} of {pagination.totalPages} · {pagination.total} total
+          </span>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => pagination.onPageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1}
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+            <Button
+              variant="outline"
+              size="icon"
+              className="size-8"
+              onClick={() => pagination.onPageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </div>
         </div>
       )}
 

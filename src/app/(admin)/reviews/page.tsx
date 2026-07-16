@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Check, Star, X } from "lucide-react";
 import { toast } from "sonner";
@@ -13,6 +13,7 @@ import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dial
 import { Button } from "@/components/ui/button";
 import { reviewService } from "@/services/review.service";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import { REVIEW_STATUS_LABELS, type Review } from "@/types/review";
 
 function StarRating({ rating }: { rating: number }) {
@@ -29,31 +30,11 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 export default function ReviewsPage() {
-  const [rows, setRows] = useState<Review[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, setItems: setRows, isLoading, reload: loadReviews, pagination } = usePaginatedList(
+    (params) => reviewService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load reviews" }
+  );
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const loadReviews = async () => {
-    try {
-      const { items } = await reviewService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load reviews"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await reviewService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load reviews"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
 
   const setStatus = async (id: number, status: 0 | 1 | 2) => {
     try {
@@ -155,6 +136,7 @@ export default function ReviewsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search reviews..."
         searchColumn="product"
+        pagination={pagination}
       />
 
       <ConfirmDeleteDialog

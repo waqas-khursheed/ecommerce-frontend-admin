@@ -29,6 +29,10 @@ import { Separator } from "@/components/ui/separator";
 import { tagService } from "@/services/tag.service";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { tagSchema } from "@/lib/validations/tag.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { ProductTag } from "@/types/tag";
 
 function MetaTagsEditor({ tagId }: { tagId: number }) {
@@ -110,41 +114,23 @@ function MetaTagsEditor({ tagId }: { tagId: number }) {
 }
 
 export default function TagsPage() {
-  const [rows, setRows] = useState<ProductTag[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, isLoading, reload: loadTags, pagination } = usePaginatedList(
+    (params) => tagService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load tags" }
+  );
   const [editing, setEditing] = useState<ProductTag | null>(null);
   const [open, setOpen] = useState(false);
   const [iconFile, setIconFile] = useState<File | null>(null);
   const [ogImageFile, setOgImageFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const loadTags = async () => {
-    try {
-      const { items } = await tagService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load tags"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await tagService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load tags"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const openCreate = () => {
     setEditing(null);
     setIconFile(null);
     setOgImageFile(null);
+    setErrors({});
     setOpen(true);
   };
 
@@ -152,10 +138,20 @@ export default function TagsPage() {
     setEditing(tag);
     setIconFile(null);
     setOgImageFile(null);
+    setErrors({});
     setOpen(true);
   };
 
   const handleSubmit = async (formData: FormData) => {
+    const { data, errors: validationErrors } = validateForm(tagSchema, {
+      name: String(formData.get("name") ?? ""),
+    });
+    if (!data) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
     setIsSubmitting(true);
     const payload = new FormData();
     payload.append("name", String(formData.get("name") ?? ""));
@@ -242,7 +238,14 @@ export default function TagsPage() {
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="name">Name</Label>
-                    <Input id="name" name="name" defaultValue={editing?.name} required />
+                    <Input
+                      id="name"
+                      name="name"
+                      defaultValue={editing?.name}
+                      aria-invalid={!!errors.name}
+                      onChange={() => errors.name && setErrors((prev) => ({ ...prev, name: "" }))}
+                    />
+                    <FieldError message={errors.name} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="description">Description</Label>
@@ -308,6 +311,7 @@ export default function TagsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search tags..."
         searchColumn="name"
+        pagination={pagination}
       />
 
       <ConfirmDeleteDialog

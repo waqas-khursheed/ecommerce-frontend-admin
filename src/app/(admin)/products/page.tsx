@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus, Star, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -39,17 +39,23 @@ import { brandService } from "@/services/brand.service";
 import { tagService, productTagService } from "@/services/tag.service";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { productSchema } from "@/lib/validations/product.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Product } from "@/types/product";
 import type { Category } from "@/types/category";
 import type { Brand } from "@/types/brand";
 import type { ProductTag } from "@/types/tag";
 
 export default function ProductsPage() {
-  const [rows, setRows] = useState<Product[]>([]);
+  const { items: rows, isLoading, reload: loadAll, pagination } = usePaginatedList(
+    (params) => productService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load products" }
+  );
   const [categories, setCategories] = useState<Category[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [tags, setTags] = useState<ProductTag[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   const [editing, setEditing] = useState<Product | null>(null);
   const [open, setOpen] = useState(false);
@@ -60,43 +66,23 @@ export default function ProductsPage() {
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
-  const loadAll = useCallback(async () => {
-    try {
-      const [productsRes, categoriesRes, brandsRes, tagsRes] = await Promise.all([
-        productService.list({ limit: 100 }),
-        categoryService.list({ limit: 100 }),
-        brandService.list({ limit: 100 }),
-        tagService.list({ limit: 100 }),
-      ]);
-      setRows(productsRes.items);
-      setCategories(categoriesRes.items);
-      setBrands(brandsRes.items);
-      setTags(tagsRes.items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load products"));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
+  // Category/brand/tag pickers used by the product form — fetched once,
+  // independent of which page of the (paginated) product table is showing.
   useEffect(() => {
     (async () => {
       try {
-        const [productsRes, categoriesRes, brandsRes, tagsRes] = await Promise.all([
-          productService.list({ limit: 100 }),
+        const [categoriesRes, brandsRes, tagsRes] = await Promise.all([
           categoryService.list({ limit: 100 }),
           brandService.list({ limit: 100 }),
           tagService.list({ limit: 100 }),
         ]);
-        setRows(productsRes.items);
         setCategories(categoriesRes.items);
         setBrands(brandsRes.items);
         setTags(tagsRes.items);
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load products"));
-      } finally {
-        setIsLoading(false);
+        toast.error(getApiErrorMessage(error, "Failed to load product form data"));
       }
     })();
   }, []);
@@ -110,6 +96,7 @@ export default function ProductsPage() {
     setGalleryFiles(null);
     setSelectedCategoryIds([]);
     setSelectedTagIds([]);
+    setErrors({});
     setOpen(true);
   };
 
@@ -125,6 +112,7 @@ export default function ProductsPage() {
     setEditing(product);
     setSelectedCategoryIds((product.assignCatToProducts ?? []).map((a) => a.category_id));
     setSelectedTagIds([]);
+    setErrors({});
     setOpen(true);
 
     try {
@@ -202,11 +190,28 @@ export default function ProductsPage() {
   );
 
   const handleSubmit = async (formData: FormData) => {
-    if (!editing && !featuredImageFile) {
-      toast.error("Featured image is required");
+    const { data, errors: validationErrors } = validateForm(productSchema, {
+      title: String(formData.get("title") ?? ""),
+      price: String(formData.get("price") ?? ""),
+      d_price: String(formData.get("d_price") ?? "0"),
+      d_percentage: String(formData.get("d_percentage") ?? "0"),
+      quantity: String(formData.get("quantity") ?? ""),
+      sku: String(formData.get("sku") ?? ""),
+      status: String(formData.get("status") ?? "1"),
+      meta_keywords: String(formData.get("meta_keywords") ?? ""),
+      meta_description: String(formData.get("meta_description") ?? ""),
+      brand_id: formData.get("brand_id") ? String(formData.get("brand_id")) : null,
+    });
+
+    const imageErrors: FieldErrors = {};
+    if (!editing && !featuredImageFile) imageErrors.featured_image = "Featured image is required";
+
+    if (!data || Object.keys(imageErrors).length > 0) {
+      setErrors({ ...validationErrors, ...imageErrors });
+      toast.error("Please fix the highlighted fields");
       return;
     }
-
+    setErrors({});
     setIsSubmitting(true);
 
     const payload = new FormData();
@@ -320,7 +325,14 @@ export default function ProductsPage() {
                     <h3 className="text-sm font-semibold text-muted-foreground">Basic info</h3>
                     <div className="space-y-1.5">
                       <Label htmlFor="title">Title</Label>
-                      <Input id="title" name="title" defaultValue={editing?.title} required />
+                      <Input
+                        id="title"
+                        name="title"
+                        defaultValue={editing?.title}
+                        aria-invalid={!!errors.title}
+                        onChange={() => errors.title && setErrors((prev) => ({ ...prev, title: "" }))}
+                      />
+                      <FieldError message={errors.title} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="short_desc">Short description</Label>
@@ -347,21 +359,55 @@ export default function ProductsPage() {
                     <div className="grid grid-cols-3 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="price">Price</Label>
-                        <Input id="price" name="price" type="number" step="0.01" defaultValue={editing?.price} required />
+                        <Input
+                          id="price"
+                          name="price"
+                          type="number"
+                          step="0.01"
+                          defaultValue={editing?.price}
+                          aria-invalid={!!errors.price}
+                          onChange={() => errors.price && setErrors((prev) => ({ ...prev, price: "" }))}
+                        />
+                        <FieldError message={errors.price} />
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="d_price">Discount price</Label>
-                        <Input id="d_price" name="d_price" type="number" step="0.01" defaultValue={editing?.d_price ?? 0} />
+                        <Input
+                          id="d_price"
+                          name="d_price"
+                          type="number"
+                          step="0.01"
+                          defaultValue={editing?.d_price ?? 0}
+                          aria-invalid={!!errors.d_price}
+                          onChange={() => errors.d_price && setErrors((prev) => ({ ...prev, d_price: "" }))}
+                        />
+                        <FieldError message={errors.d_price} />
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="d_percentage">Discount %</Label>
-                        <Input id="d_percentage" name="d_percentage" type="number" defaultValue={editing?.d_percentage ?? 0} />
+                        <Input
+                          id="d_percentage"
+                          name="d_percentage"
+                          type="number"
+                          defaultValue={editing?.d_percentage ?? 0}
+                          aria-invalid={!!errors.d_percentage}
+                          onChange={() => errors.d_percentage && setErrors((prev) => ({ ...prev, d_percentage: "" }))}
+                        />
+                        <FieldError message={errors.d_percentage} />
                       </div>
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
                         <Label htmlFor="quantity">Quantity</Label>
-                        <Input id="quantity" name="quantity" type="number" defaultValue={editing?.quantity} required />
+                        <Input
+                          id="quantity"
+                          name="quantity"
+                          type="number"
+                          defaultValue={editing?.quantity}
+                          aria-invalid={!!errors.quantity}
+                          onChange={() => errors.quantity && setErrors((prev) => ({ ...prev, quantity: "" }))}
+                        />
+                        <FieldError message={errors.quantity} />
                       </div>
                       <div className="space-y-1.5">
                         <Label htmlFor="sku">SKU</Label>
@@ -380,8 +426,12 @@ export default function ProductsPage() {
                       id="featured_image"
                       label="Featured image"
                       required={!editing}
+                      error={errors.featured_image}
                       existingImageUrl={uploadUrl("products", editing?.featured_image)}
-                      onFileChange={setFeaturedImageFile}
+                      onFileChange={(f) => {
+                        setFeaturedImageFile(f);
+                        if (f && errors.featured_image) setErrors((prev) => ({ ...prev, featured_image: "" }));
+                      }}
                     />
                     <ImageUploadField
                       id="hovered_image"
@@ -542,6 +592,7 @@ export default function ProductsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search products..."
         searchColumn="title"
+        pagination={pagination}
       />
 
       <ConfirmDeleteDialog

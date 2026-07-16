@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye } from "lucide-react";
 import { toast } from "sonner";
@@ -24,36 +24,17 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { userService } from "@/services/user.service";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Customer } from "@/types/customer";
 
 export default function CustomersPage() {
-  const [rows, setRows] = useState<Customer[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, setItems: setRows, isLoading, reload: loadCustomers, pagination } = usePaginatedList(
+    (params) => userService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load customers" }
+  );
   const [viewing, setViewing] = useState<Customer | null>(null);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const loadCustomers = async () => {
-    try {
-      const { items } = await userService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load customers"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await userService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load customers"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
 
   const toggleStatus = async (id: number) => {
     try {
@@ -150,6 +131,7 @@ export default function CustomersPage() {
         isLoading={isLoading}
         searchPlaceholder="Search customers..."
         searchColumn="name"
+        pagination={pagination}
       />
 
       <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setViewing(null); }}>

@@ -36,6 +36,17 @@ export interface FilterTab {
   value: string;
 }
 
+// When provided, the table renders server-driven pagination (Prev/Next over
+// `totalPages`, calling back into whatever re-fetches page N from the API)
+// instead of paginating client-side through whatever's in `data` — use this
+// whenever `data` is only one page of a larger server-side list.
+export interface ServerPagination {
+  page: number;
+  totalPages: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}
+
 interface DataTableProps<TData> {
   columns: ColumnDef<TData, unknown>[];
   data: TData[];
@@ -45,6 +56,7 @@ interface DataTableProps<TData> {
   filterTabs?: FilterTab[];
   filterColumn?: string;
   toolbarActions?: ReactNode;
+  pagination?: ServerPagination;
 }
 
 export function DataTable<TData>({
@@ -56,6 +68,7 @@ export function DataTable<TData>({
   filterTabs,
   filterColumn,
   toolbarActions,
+  pagination,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [globalFilter, setGlobalFilter] = useState("");
@@ -70,7 +83,9 @@ export function DataTable<TData>({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
+    // In server-pagination mode `data` is already just one page's worth, so
+    // there's nothing to slice further client-side.
+    ...(pagination ? {} : { getPaginationRowModel: getPaginationRowModel() }),
     globalFilterFn: (row, _columnId, filterValue) => {
       if (!searchColumn) return true;
       const value = String(row.getValue(searchColumn) ?? "").toLowerCase();
@@ -173,46 +188,18 @@ export function DataTable<TData>({
         </Table>
       </div>
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <span>Rows per page</span>
-          <Select
-            value={String(table.getState().pagination.pageSize)}
-            onValueChange={(value) => table.setPageSize(Number(value))}
-          >
-            <SelectTrigger className="h-8 w-16">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[5, 10, 20, 50].map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="flex items-center gap-3 text-sm text-muted-foreground">
-          <span>
-            Showing{" "}
-            {table.getRowModel().rows.length === 0
-              ? 0
-              : table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
-            –
-            {Math.min(
-              (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
-              table.getFilteredRowModel().rows.length
-            )}{" "}
-            of {table.getFilteredRowModel().rows.length}
+      {pagination ? (
+        <div className="flex items-center justify-between">
+          <span className="text-sm text-muted-foreground">
+            Page {pagination.page} of {pagination.totalPages} · {pagination.total} total
           </span>
           <div className="flex items-center gap-1">
             <Button
               variant="outline"
               size="icon"
               className="size-8"
-              onClick={() => table.previousPage()}
-              disabled={!table.getCanPreviousPage()}
+              onClick={() => pagination.onPageChange(pagination.page - 1)}
+              disabled={pagination.page <= 1}
             >
               <ChevronLeft className="size-4" />
             </Button>
@@ -220,14 +207,70 @@ export function DataTable<TData>({
               variant="outline"
               size="icon"
               className="size-8"
-              onClick={() => table.nextPage()}
-              disabled={!table.getCanNextPage()}
+              onClick={() => pagination.onPageChange(pagination.page + 1)}
+              disabled={pagination.page >= pagination.totalPages}
             >
               <ChevronRight className="size-4" />
             </Button>
           </div>
         </div>
-      </div>
+      ) : (
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <span>Rows per page</span>
+            <Select
+              value={String(table.getState().pagination.pageSize)}
+              onValueChange={(value) => table.setPageSize(Number(value))}
+            >
+              <SelectTrigger className="h-8 w-16">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[5, 10, 20, 50].map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <span>
+              Showing{" "}
+              {table.getRowModel().rows.length === 0
+                ? 0
+                : table.getState().pagination.pageIndex * table.getState().pagination.pageSize + 1}
+              –
+              {Math.min(
+                (table.getState().pagination.pageIndex + 1) * table.getState().pagination.pageSize,
+                table.getFilteredRowModel().rows.length
+              )}{" "}
+              of {table.getFilteredRowModel().rows.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                onClick={() => table.previousPage()}
+                disabled={!table.getCanPreviousPage()}
+              >
+                <ChevronLeft className="size-4" />
+              </Button>
+              <Button
+                variant="outline"
+                size="icon"
+                className="size-8"
+                onClick={() => table.nextPage()}
+                disabled={!table.getCanNextPage()}
+              >
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

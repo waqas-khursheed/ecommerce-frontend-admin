@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
@@ -35,41 +35,24 @@ import {
 import { brandService } from "@/services/brand.service";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { brandSchema } from "@/lib/validations/brand.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Brand } from "@/types/brand";
 
 export default function BrandsPage() {
-  const [rows, setRows] = useState<Brand[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, isLoading, reload: loadBrands, pagination } = usePaginatedList(
+    (params) => brandService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load brands" }
+  );
   const [editing, setEditing] = useState<Brand | null>(null);
   const [open, setOpen] = useState(false);
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [bannerFile, setBannerFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const loadBrands = useCallback(async () => {
-    try {
-      const { items } = await brandService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load brands"));
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await brandService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load brands"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const columns = useMemo<ColumnDef<Brand, unknown>[]>(
     () => [
@@ -90,6 +73,7 @@ export default function BrandsPage() {
                 setEditing(row.original);
                 setLogoFile(null);
                 setBannerFile(null);
+                setErrors({});
                 setOpen(true);
               }}
               onDelete={() => setDeletingId(row.original.id)}
@@ -102,11 +86,21 @@ export default function BrandsPage() {
   );
 
   const handleSubmit = async (formData: FormData) => {
-    if (!editing && (!logoFile || !bannerFile)) {
-      toast.error("Logo and banner are both required");
+    const { data, errors: validationErrors } = validateForm(brandSchema, {
+      title: String(formData.get("title") ?? ""),
+      status: String(formData.get("status") ?? "1"),
+    });
+
+    const imageErrors: FieldErrors = {};
+    if (!editing && !logoFile) imageErrors.logo = "Logo is required";
+    if (!editing && !bannerFile) imageErrors.banner = "Banner is required";
+
+    if (!data || Object.keys(imageErrors).length > 0) {
+      setErrors({ ...validationErrors, ...imageErrors });
+      toast.error("Please fix the highlighted fields");
       return;
     }
-
+    setErrors({});
     setIsSubmitting(true);
 
     const payload = new FormData();
@@ -170,6 +164,7 @@ export default function BrandsPage() {
                     setEditing(null);
                     setLogoFile(null);
                     setBannerFile(null);
+                    setErrors({});
                   }}
                 >
                   <Plus />
@@ -188,7 +183,14 @@ export default function BrandsPage() {
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="title">Name</Label>
-                    <Input id="title" name="title" defaultValue={editing?.title} required />
+                    <Input
+                      id="title"
+                      name="title"
+                      defaultValue={editing?.title}
+                      aria-invalid={!!errors.title}
+                      onChange={() => errors.title && setErrors((prev) => ({ ...prev, title: "" }))}
+                    />
+                    <FieldError message={errors.title} />
                   </div>
                   <div className="space-y-1.5">
                     <Label htmlFor="description">Description</Label>
@@ -199,15 +201,23 @@ export default function BrandsPage() {
                     id="logo"
                     label="Logo"
                     required={!editing}
+                    error={errors.logo}
                     existingImageUrl={uploadUrl("brands", editing?.logo)}
-                    onFileChange={setLogoFile}
+                    onFileChange={(f) => {
+                      setLogoFile(f);
+                      if (f && errors.logo) setErrors((prev) => ({ ...prev, logo: "" }));
+                    }}
                   />
                   <ImageUploadField
                     id="banner"
                     label="Banner"
                     required={!editing}
+                    error={errors.banner}
                     existingImageUrl={uploadUrl("brands", editing?.banner)}
-                    onFileChange={setBannerFile}
+                    onFileChange={(f) => {
+                      setBannerFile(f);
+                      if (f && errors.banner) setErrors((prev) => ({ ...prev, banner: "" }));
+                    }}
                   />
 
                   <div className="space-y-1.5">
@@ -241,6 +251,7 @@ export default function BrandsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search brands..."
         searchColumn="title"
+        pagination={pagination}
       />
 
       <ConfirmDeleteDialog

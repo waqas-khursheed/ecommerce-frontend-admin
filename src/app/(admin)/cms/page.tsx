@@ -37,42 +37,34 @@ import {
 } from "@/components/ui/sheet";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { uploadUrl } from "@/lib/http";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { commonPageSchema, contactUsPageSchema, faqCategorySchema, faqSchema } from "@/lib/validations/cms.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import { commonPageService, contactUsPageService, faqCategoryService, faqService } from "@/services/cms.service";
 import type { CommonPage, ContactUsPage, Faq, FaqCategory } from "@/types/cms";
 
 function FaqCategoriesTab() {
-  const [rows, setRows] = useState<FaqCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => faqCategoryService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load FAQ categories" }
+  );
   const [editing, setEditing] = useState<FaqCategory | null>(null);
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await faqCategoryService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load FAQ categories"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await faqCategoryService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load FAQ categories"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const handleSubmit = async (formData: FormData) => {
-    setIsSubmitting(true);
     const payload = { title: String(formData.get("title") ?? "") };
+    const { data, errors: validationErrors } = validateForm(faqCategorySchema, payload);
+    if (!data) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
     try {
       if (editing) {
         await faqCategoryService.update(editing.id, payload);
@@ -115,6 +107,7 @@ function FaqCategoriesTab() {
             <RowActions
               onEdit={() => {
                 setEditing(row.original);
+                setErrors({});
                 setOpen(true);
               }}
               onDelete={() => setDeletingId(row.original.id)}
@@ -130,7 +123,7 @@ function FaqCategoriesTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
-          <SheetTrigger render={<Button size="sm" onClick={() => setEditing(null)}><Plus />Add Category</Button>} />
+          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setErrors({}); }}><Plus />Add Category</Button>} />
           <SheetContent>
             <form action={handleSubmit} className="flex h-full flex-col">
               <SheetHeader>
@@ -140,7 +133,14 @@ function FaqCategoriesTab() {
               <div className="flex-1 space-y-4 px-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="title">Title</Label>
-                  <Input id="title" name="title" defaultValue={editing?.title} required />
+                  <Input
+                    id="title"
+                    name="title"
+                    defaultValue={editing?.title}
+                    aria-invalid={!!errors.title}
+                    onChange={() => errors.title && setErrors((prev) => ({ ...prev, title: "" }))}
+                  />
+                  <FieldError message={errors.title} />
                 </div>
               </div>
               <SheetFooter>
@@ -151,54 +151,49 @@ function FaqCategoriesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search categories..." searchColumn="title" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search categories..." searchColumn="title" pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this category?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function FaqsTab() {
-  const [rows, setRows] = useState<Faq[]>([]);
+  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => faqService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load FAQs" }
+  );
   const [categories, setCategories] = useState<FaqCategory[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
   const [editing, setEditing] = useState<Faq | null>(null);
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await faqService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load FAQs"));
-    }
-  };
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     (async () => {
       try {
-        const [faqRes, categoryRes] = await Promise.all([
-          faqService.list({ limit: 100 }),
-          faqCategoryService.list({ limit: 100 }),
-        ]);
-        setRows(faqRes.items);
-        setCategories(categoryRes.items);
+        const { items } = await faqCategoryService.list({ limit: 100 });
+        setCategories(items);
       } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load FAQs"));
-      } finally {
-        setIsLoading(false);
+        toast.error(getApiErrorMessage(error, "Failed to load FAQ categories"));
       }
     })();
   }, []);
 
   const handleSubmit = async (formData: FormData) => {
-    setIsSubmitting(true);
-    const payload = {
+    const { data, errors: validationErrors } = validateForm(faqSchema, {
       question: String(formData.get("question") ?? ""),
       answer: String(formData.get("answer") ?? ""),
-      category_id: Number(formData.get("category_id") ?? 0),
-    };
+      category_id: String(formData.get("category_id") ?? "0"),
+    });
+    if (!data) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
+    const payload = data;
     try {
       if (editing) {
         await faqService.update(editing.id, payload);
@@ -242,6 +237,7 @@ function FaqsTab() {
             <RowActions
               onEdit={() => {
                 setEditing(row.original);
+                setErrors({});
                 setOpen(true);
               }}
               onDelete={() => setDeletingId(row.original.id)}
@@ -257,7 +253,7 @@ function FaqsTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setEditing(null); }}>
-          <SheetTrigger render={<Button size="sm" onClick={() => setEditing(null)}><Plus />Add FAQ</Button>} />
+          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setErrors({}); }}><Plus />Add FAQ</Button>} />
           <SheetContent className="overflow-y-auto">
             <form action={handleSubmit} className="flex h-full flex-col">
               <SheetHeader>
@@ -267,16 +263,35 @@ function FaqsTab() {
               <div className="flex-1 space-y-4 px-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="question">Question</Label>
-                  <Input id="question" name="question" defaultValue={editing?.question} required />
+                  <Input
+                    id="question"
+                    name="question"
+                    defaultValue={editing?.question}
+                    aria-invalid={!!errors.question}
+                    onChange={() => errors.question && setErrors((prev) => ({ ...prev, question: "" }))}
+                  />
+                  <FieldError message={errors.question} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="answer">Answer</Label>
-                  <Textarea id="answer" name="answer" rows={4} defaultValue={editing?.answer} required />
+                  <Textarea
+                    id="answer"
+                    name="answer"
+                    rows={4}
+                    defaultValue={editing?.answer}
+                    aria-invalid={!!errors.answer}
+                    onChange={() => errors.answer && setErrors((prev) => ({ ...prev, answer: "" }))}
+                  />
+                  <FieldError message={errors.answer} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="category_id">Category</Label>
-                  <Select name="category_id" defaultValue={editing?.category_id ? String(editing.category_id) : undefined}>
-                    <SelectTrigger id="category_id" className="w-full">
+                  <Select
+                    name="category_id"
+                    defaultValue={editing?.category_id ? String(editing.category_id) : undefined}
+                    onValueChange={() => errors.category_id && setErrors((prev) => ({ ...prev, category_id: "" }))}
+                  >
+                    <SelectTrigger id="category_id" className="w-full" aria-invalid={!!errors.category_id}>
                       <SelectValue placeholder="Select category" />
                     </SelectTrigger>
                     <SelectContent>
@@ -285,6 +300,7 @@ function FaqsTab() {
                       ))}
                     </SelectContent>
                   </Select>
+                  <FieldError message={errors.category_id} />
                 </div>
               </div>
               <SheetFooter>
@@ -295,44 +311,38 @@ function FaqsTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search FAQs..." searchColumn="question" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search FAQs..." searchColumn="question" pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this FAQ?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function PagesTab() {
-  const [rows, setRows] = useState<CommonPage[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => commonPageService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load pages" }
+  );
   const [editing, setEditing] = useState<CommonPage | null>(null);
   const [open, setOpen] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await commonPageService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load pages"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await commonPageService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load pages"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   const handleSubmit = async (formData: FormData) => {
+    const { data, errors: validationErrors } = validateForm(commonPageSchema, {
+      title: String(formData.get("title") ?? ""),
+      heading: String(formData.get("heading") ?? ""),
+      content: String(formData.get("content") ?? ""),
+      page_name: String(formData.get("page_name") ?? "").toLowerCase(),
+      status: formData.get("status") ? "1" : "0",
+    });
+    if (!data) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
     setIsSubmitting(true);
     const payload = new FormData();
     payload.append("title", String(formData.get("title") ?? ""));
@@ -393,6 +403,7 @@ function PagesTab() {
               onEdit={() => {
                 setEditing(row.original);
                 setImageFile(null);
+                setErrors({});
                 setOpen(true);
               }}
               onDelete={() => setDeletingId(row.original.id)}
@@ -408,7 +419,7 @@ function PagesTab() {
     <div className="space-y-4">
       <div className="flex justify-end">
         <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setEditing(null); setImageFile(null); } }}>
-          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setImageFile(null); }}><Plus />Add Page</Button>} />
+          <SheetTrigger render={<Button size="sm" onClick={() => { setEditing(null); setImageFile(null); setErrors({}); }}><Plus />Add Page</Button>} />
           <SheetContent className="overflow-y-auto">
             <form action={handleSubmit} className="flex h-full flex-col">
               <SheetHeader>
@@ -418,11 +429,26 @@ function PagesTab() {
               <div className="flex-1 space-y-4 px-4">
                 <div className="space-y-1.5">
                   <Label htmlFor="title">Title</Label>
-                  <Input id="title" name="title" defaultValue={editing?.title} required />
+                  <Input
+                    id="title"
+                    name="title"
+                    defaultValue={editing?.title}
+                    aria-invalid={!!errors.title}
+                    onChange={() => errors.title && setErrors((prev) => ({ ...prev, title: "" }))}
+                  />
+                  <FieldError message={errors.title} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="page_name">Page name (unique key)</Label>
-                  <Input id="page_name" name="page_name" defaultValue={editing?.page_name} placeholder="about-us" required />
+                  <Input
+                    id="page_name"
+                    name="page_name"
+                    defaultValue={editing?.page_name}
+                    placeholder="about-us"
+                    aria-invalid={!!errors.page_name}
+                    onChange={() => errors.page_name && setErrors((prev) => ({ ...prev, page_name: "" }))}
+                  />
+                  <FieldError message={errors.page_name} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="heading">Heading</Label>
@@ -430,7 +456,15 @@ function PagesTab() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="content">Content</Label>
-                  <Textarea id="content" name="content" rows={6} defaultValue={editing?.content} required />
+                  <Textarea
+                    id="content"
+                    name="content"
+                    rows={6}
+                    defaultValue={editing?.content}
+                    aria-invalid={!!errors.content}
+                    onChange={() => errors.content && setErrors((prev) => ({ ...prev, content: "" }))}
+                  />
+                  <FieldError message={errors.content} />
                 </div>
                 <ImageUploadField
                   id="image"
@@ -451,7 +485,7 @@ function PagesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search pages..." searchColumn="title" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search pages..." searchColumn="title" pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this page?" onConfirm={handleDelete} />
     </div>
   );
@@ -461,6 +495,7 @@ function ContactUsTab() {
   const [data, setData] = useState<ContactUsPage | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
     (async () => {
@@ -476,6 +511,16 @@ function ContactUsTab() {
   }, []);
 
   const handleSave = async (formData: FormData) => {
+    const { data: validated, errors: validationErrors } = validateForm(contactUsPageSchema, {
+      title: String(formData.get("title") ?? ""),
+      content: String(formData.get("content") ?? ""),
+    });
+    if (!validated) {
+      setErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setErrors({});
     setIsSaving(true);
     try {
       const updated = await contactUsPageService.update({
@@ -505,11 +550,26 @@ function ContactUsTab() {
         <form action={handleSave} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="title">Title</Label>
-            <Input id="title" name="title" defaultValue={data?.title} required />
+            <Input
+              id="title"
+              name="title"
+              defaultValue={data?.title}
+              aria-invalid={!!errors.title}
+              onChange={() => errors.title && setErrors((prev) => ({ ...prev, title: "" }))}
+            />
+            <FieldError message={errors.title} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="content">Content</Label>
-            <Textarea id="content" name="content" rows={4} defaultValue={data?.content} required />
+            <Textarea
+              id="content"
+              name="content"
+              rows={4}
+              defaultValue={data?.content}
+              aria-invalid={!!errors.content}
+              onChange={() => errors.content && setErrors((prev) => ({ ...prev, content: "" }))}
+            />
+            <FieldError message={errors.content} />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="map">Map embed URL</Label>

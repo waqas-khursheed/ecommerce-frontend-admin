@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye } from "lucide-react";
 import { toast } from "sonner";
@@ -23,37 +23,18 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import { queryFormService, subscriberService } from "@/services/lead.service";
 import type { QueryForm, Subscriber } from "@/types/lead";
 
 function QueryFormsTab() {
-  const [rows, setRows] = useState<QueryForm[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, setItems: setRows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => queryFormService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load messages" }
+  );
   const [viewing, setViewing] = useState<QueryForm | null>(null);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await queryFormService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load messages"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await queryFormService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load messages"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
 
   const openMessage = async (row: QueryForm) => {
     setViewing(row);
@@ -114,7 +95,7 @@ function QueryFormsTab() {
 
   return (
     <div className="space-y-4">
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search messages..." searchColumn="name" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search messages..." searchColumn="name" pagination={pagination} />
 
       <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setViewing(null); }}>
         <SheetContent>
@@ -144,31 +125,11 @@ function QueryFormsTab() {
 }
 
 function SubscribersTab() {
-  const [rows, setRows] = useState<Subscriber[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { items: rows, setItems: setRows, isLoading, reload: load, pagination } = usePaginatedList(
+    (params) => subscriberService.list(params),
+    { pageSize: 10, errorMessage: "Failed to load subscribers" }
+  );
   const [deletingId, setDeletingId] = useState<number | null>(null);
-
-  const load = async () => {
-    try {
-      const { items } = await subscriberService.list({ limit: 100 });
-      setRows(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load subscribers"));
-    }
-  };
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await subscriberService.list({ limit: 100 });
-        setRows(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load subscribers"));
-      } finally {
-        setIsLoading(false);
-      }
-    })();
-  }, []);
 
   const toggleStatus = async (id: number) => {
     try {
@@ -225,7 +186,7 @@ function SubscribersTab() {
 
   return (
     <div className="space-y-4">
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search subscribers..." searchColumn="email" />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search subscribers..." searchColumn="email" pagination={pagination} />
       <ConfirmDeleteDialog
         open={deletingId !== null}
         onOpenChange={(v) => !v && setDeletingId(null)}

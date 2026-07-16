@@ -34,74 +34,88 @@ import {
 import { attributeService, attributeItemService } from "@/services/attribute.service";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { attributeItemSchema, attributeSchema } from "@/lib/validations/attribute.schema";
+import { FieldError } from "@/components/ui/field-error";
+import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Attribute, AttributeItem } from "@/types/attribute";
 
 export default function AttributesPage() {
-  const [attributes, setAttributes] = useState<Attribute[]>([]);
-  const [items, setItems] = useState<AttributeItem[]>([]);
-  const [isLoadingAttributes, setIsLoadingAttributes] = useState(true);
-  const [isLoadingItems, setIsLoadingItems] = useState(true);
+  const {
+    items: attributes,
+    isLoading: isLoadingAttributes,
+    reload: loadAttributes,
+    pagination: attributesPagination,
+  } = usePaginatedList((params) => attributeService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load attributes",
+  });
+  const {
+    items,
+    isLoading: isLoadingItems,
+    reload: loadItems,
+    pagination: itemsPagination,
+  } = usePaginatedList((params) => attributeItemService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load attribute items",
+  });
+
+  // The item picker/column lookup and the "Items" count column both need
+  // every attribute/item, not just whichever page the two tables above are
+  // showing — kept as separate, un-paginated fetches.
+  const [allAttributes, setAllAttributes] = useState<Attribute[]>([]);
+  const [allItems, setAllItems] = useState<AttributeItem[]>([]);
+  const loadAllAttributes = useCallback(async () => {
+    try {
+      const { items } = await attributeService.list({ limit: 100 });
+      setAllAttributes(items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load attributes"));
+    }
+  }, []);
+  const loadAllItems = useCallback(async () => {
+    try {
+      const { items } = await attributeItemService.list({ limit: 100 });
+      setAllItems(items);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load attribute items"));
+    }
+  }, []);
+  useEffect(() => {
+    (async () => {
+      try {
+        const { items } = await attributeService.list({ limit: 100 });
+        setAllAttributes(items);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "Failed to load attributes"));
+      }
+    })();
+    (async () => {
+      try {
+        const { items } = await attributeItemService.list({ limit: 100 });
+        setAllItems(items);
+      } catch (error) {
+        toast.error(getApiErrorMessage(error, "Failed to load attribute items"));
+      }
+    })();
+  }, []);
 
   const [attrOpen, setAttrOpen] = useState(false);
   const [editingAttr, setEditingAttr] = useState<Attribute | null>(null);
   const [deletingAttrId, setDeletingAttrId] = useState<number | null>(null);
   const [isSubmittingAttr, setIsSubmittingAttr] = useState(false);
+  const [attrErrors, setAttrErrors] = useState<FieldErrors>({});
 
   const [itemOpen, setItemOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<AttributeItem | null>(null);
   const [itemImageFile, setItemImageFile] = useState<File | null>(null);
   const [deletingItemId, setDeletingItemId] = useState<number | null>(null);
   const [isSubmittingItem, setIsSubmittingItem] = useState(false);
-
-  const loadAttributes = useCallback(async () => {
-    try {
-      const { items } = await attributeService.list({ limit: 100 });
-      setAttributes(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load attributes"));
-    } finally {
-      setIsLoadingAttributes(false);
-    }
-  }, []);
-
-  const loadItems = useCallback(async () => {
-    try {
-      const { items } = await attributeItemService.list({ limit: 100 });
-      setItems(items);
-    } catch (error) {
-      toast.error(getApiErrorMessage(error, "Failed to load attribute items"));
-    } finally {
-      setIsLoadingItems(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await attributeService.list({ limit: 100 });
-        setAttributes(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load attributes"));
-      } finally {
-        setIsLoadingAttributes(false);
-      }
-    })();
-
-    (async () => {
-      try {
-        const { items } = await attributeItemService.list({ limit: 100 });
-        setItems(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load attribute items"));
-      } finally {
-        setIsLoadingItems(false);
-      }
-    })();
-  }, []);
+  const [itemErrors, setItemErrors] = useState<FieldErrors>({});
 
   const attributeTitleById = useMemo(
-    () => new Map(attributes.map((a) => [a.id, a.attribute_title])),
-    [attributes]
+    () => new Map(allAttributes.map((a) => [a.id, a.attribute_title])),
+    [allAttributes]
   );
 
   const attributeColumns = useMemo<ColumnDef<Attribute, unknown>[]>(
@@ -110,7 +124,7 @@ export default function AttributesPage() {
       {
         id: "items",
         header: "Items",
-        cell: ({ row }) => items.filter((i) => i.attribute_id === row.original.id).length,
+        cell: ({ row }) => allItems.filter((i) => i.attribute_id === row.original.id).length,
       },
       {
         id: "actions",
@@ -120,6 +134,7 @@ export default function AttributesPage() {
             <RowActions
               onEdit={() => {
                 setEditingAttr(row.original);
+                setAttrErrors({});
                 setAttrOpen(true);
               }}
               onDelete={() => setDeletingAttrId(row.original.id)}
@@ -128,7 +143,7 @@ export default function AttributesPage() {
         ),
       },
     ],
-    [items]
+    [allItems]
   );
 
   const itemColumns = useMemo<ColumnDef<AttributeItem, unknown>[]>(
@@ -161,6 +176,7 @@ export default function AttributesPage() {
               onEdit={() => {
                 setEditingItem(row.original);
                 setItemImageFile(null);
+                setItemErrors({});
                 setItemOpen(true);
               }}
               onDelete={() => setDeletingItemId(row.original.id)}
@@ -173,8 +189,15 @@ export default function AttributesPage() {
   );
 
   const handleAttrSubmit = async (formData: FormData) => {
-    setIsSubmittingAttr(true);
     const attribute_title = String(formData.get("attribute_title") ?? "");
+    const { data, errors: validationErrors } = validateForm(attributeSchema, { attribute_title });
+    if (!data) {
+      setAttrErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setAttrErrors({});
+    setIsSubmittingAttr(true);
 
     try {
       if (editingAttr) {
@@ -186,7 +209,7 @@ export default function AttributesPage() {
       }
       setAttrOpen(false);
       setEditingAttr(null);
-      await loadAttributes();
+      await Promise.all([loadAttributes(), loadAllAttributes()]);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to save attribute"));
     } finally {
@@ -201,7 +224,7 @@ export default function AttributesPage() {
     try {
       await attributeService.remove(deletingAttrId);
       toast.success(`"${target?.attribute_title}" deleted`);
-      await loadAttributes();
+      await Promise.all([loadAttributes(), loadAllAttributes()]);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to delete attribute"));
     } finally {
@@ -210,6 +233,17 @@ export default function AttributesPage() {
   };
 
   const handleItemSubmit = async (formData: FormData) => {
+    const { data, errors: validationErrors } = validateForm(attributeItemSchema, {
+      title: String(formData.get("title") ?? ""),
+      attribute_id: String(formData.get("attribute_id") ?? ""),
+      order_by: String(formData.get("order_by") ?? "0"),
+    });
+    if (!data) {
+      setItemErrors(validationErrors);
+      toast.error("Please fix the highlighted fields");
+      return;
+    }
+    setItemErrors({});
     setIsSubmittingItem(true);
 
     const payload = new FormData();
@@ -228,7 +262,7 @@ export default function AttributesPage() {
       }
       setItemOpen(false);
       setEditingItem(null);
-      await loadItems();
+      await Promise.all([loadItems(), loadAllItems()]);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to save attribute item"));
     } finally {
@@ -242,7 +276,7 @@ export default function AttributesPage() {
     try {
       await attributeItemService.remove(deletingItemId);
       toast.success("Attribute item deleted");
-      await loadItems();
+      await Promise.all([loadItems(), loadAllItems()]);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to delete attribute item"));
     } finally {
@@ -275,7 +309,13 @@ export default function AttributesPage() {
             >
               <SheetTrigger
                 render={
-                  <Button size="sm" onClick={() => setEditingAttr(null)}>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setEditingAttr(null);
+                      setAttrErrors({});
+                    }}
+                  >
                     <Plus />
                     Add Attribute
                   </Button>
@@ -294,8 +334,13 @@ export default function AttributesPage() {
                         id="attribute_title"
                         name="attribute_title"
                         defaultValue={editingAttr?.attribute_title}
-                        required
+                        aria-invalid={!!attrErrors.attribute_title}
+                        onChange={() =>
+                          attrErrors.attribute_title &&
+                          setAttrErrors((prev) => ({ ...prev, attribute_title: "" }))
+                        }
                       />
+                      <FieldError message={attrErrors.attribute_title} />
                     </div>
                   </div>
                   <SheetFooter>
@@ -314,6 +359,7 @@ export default function AttributesPage() {
             isLoading={isLoadingAttributes}
             searchPlaceholder="Search attributes..."
             searchColumn="attribute_title"
+            pagination={attributesPagination}
           />
         </TabsContent>
 
@@ -330,10 +376,11 @@ export default function AttributesPage() {
                 render={
                   <Button
                     size="sm"
-                    disabled={attributes.length === 0}
+                    disabled={allAttributes.length === 0}
                     onClick={() => {
                       setEditingItem(null);
                       setItemImageFile(null);
+                      setItemErrors({});
                     }}
                   >
                     <Plus />
@@ -350,22 +397,36 @@ export default function AttributesPage() {
                   <div className="flex-1 space-y-4 px-4">
                     <div className="space-y-1.5">
                       <Label htmlFor="attribute_id">Attribute</Label>
-                      <Select name="attribute_id" defaultValue={String(editingItem?.attribute_id ?? attributes[0]?.id ?? "")}>
-                        <SelectTrigger id="attribute_id" className="w-full">
+                      <Select
+                        name="attribute_id"
+                        defaultValue={String(editingItem?.attribute_id ?? allAttributes[0]?.id ?? "")}
+                        onValueChange={() =>
+                          itemErrors.attribute_id && setItemErrors((prev) => ({ ...prev, attribute_id: "" }))
+                        }
+                      >
+                        <SelectTrigger id="attribute_id" className="w-full" aria-invalid={!!itemErrors.attribute_id}>
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {attributes.map((a) => (
+                          {allAttributes.map((a) => (
                             <SelectItem key={a.id} value={String(a.id)}>
                               {a.attribute_title}
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
+                      <FieldError message={itemErrors.attribute_id} />
                     </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="title">Value</Label>
-                      <Input id="title" name="title" defaultValue={editingItem?.title} required />
+                      <Input
+                        id="title"
+                        name="title"
+                        defaultValue={editingItem?.title}
+                        aria-invalid={!!itemErrors.title}
+                        onChange={() => itemErrors.title && setItemErrors((prev) => ({ ...prev, title: "" }))}
+                      />
+                      <FieldError message={itemErrors.title} />
                     </div>
                     <ImageUploadField
                       id="image"
@@ -394,6 +455,7 @@ export default function AttributesPage() {
             isLoading={isLoadingItems}
             searchPlaceholder="Search items..."
             searchColumn="title"
+            pagination={itemsPagination}
           />
         </TabsContent>
       </Tabs>

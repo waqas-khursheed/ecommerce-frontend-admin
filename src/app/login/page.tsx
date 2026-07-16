@@ -12,6 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { FieldError } from "@/components/ui/field-error";
+import { validateForm, type FieldErrors } from "@/lib/validation";
+import { loginSchema } from "@/lib/validations/auth.schema";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -19,16 +22,24 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    const { data, errors } = validateForm(loginSchema, { email, password });
+    if (!data) {
+      setFieldErrors(errors);
+      return;
+    }
+    setFieldErrors({});
     setIsSubmitting(true);
 
     try {
-      const result = await authService.login({ email, password });
+      const result = await authService.login(data);
       setSession(result.admin, result.token);
       router.push("/dashboard");
     } catch (err) {
@@ -56,11 +67,15 @@ export default function LoginPage() {
               <Input
                 id="email"
                 type="email"
-                required
+                aria-invalid={!!fieldErrors.email}
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (fieldErrors.email) setFieldErrors((prev) => ({ ...prev, email: "" }));
+                }}
                 placeholder="superadmin@admin.com"
               />
+              <FieldError message={fieldErrors.email} />
             </div>
 
             <div className="space-y-1.5">
@@ -68,10 +83,14 @@ export default function LoginPage() {
               <Input
                 id="password"
                 type="password"
-                required
+                aria-invalid={!!fieldErrors.password}
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  if (fieldErrors.password) setFieldErrors((prev) => ({ ...prev, password: "" }));
+                }}
               />
+              <FieldError message={fieldErrors.password} />
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
