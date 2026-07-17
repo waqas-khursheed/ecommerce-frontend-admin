@@ -1,4 +1,5 @@
 export * from "./auth.service";
+export * from "./admin-account.service";
 export * from "./category.service";
 export * from "./brand.service";
 export * from "./attribute.service";
@@ -13,7 +14,6 @@ export * from "./reward.service";
 export * from "./cms.service";
 export * from "./setting.service";
 export * from "./location.service";
-export * from "./payment.service";
 export * from "./notification.service";
 export * from "./dashboard.service";
 export * from "./lead.service";

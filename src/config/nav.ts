@@ -18,9 +18,9 @@ import {
   Contact,
   FileText,
   MapPin,
-  CreditCard,
   Bell,
   Settings,
+  ShieldCheck,
 } from "lucide-react";
 
 export interface NavItem {
@@ -88,7 +88,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Configuration",
     items: [
       { title: "Locations", href: "/locations", icon: MapPin },
-      { title: "Payments", href: "/payments", icon: CreditCard },
+      { title: "Admins", href: "/admins", icon: ShieldCheck },
       { title: "Notifications", href: "/notifications", icon: Bell, badge: "3" },
       { title: "Settings", href: "/settings", icon: Settings },
     ],

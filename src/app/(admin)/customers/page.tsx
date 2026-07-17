@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye } from "lucide-react";
 import { toast } from "sonner";
@@ -27,9 +28,16 @@ import { getApiErrorMessage } from "@/lib/apiError";
 import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Customer } from "@/types/customer";
 
-export default function CustomersPage() {
+function CustomersPageContent() {
+  // Seeds the initial fetch with ?search= from the header quick-search
+  // (components/layout/header-search.tsx) — the DataTable's own search box
+  // only filters the current page client-side, so without this the target
+  // customer wouldn't be visible unless it happened to already be on page 1.
+  const searchParams = useSearchParams();
+  const initialSearch = searchParams.get("search") ?? undefined;
+
   const { items: rows, setItems: setRows, isLoading, reload: loadCustomers, pagination } = usePaginatedList(
-    (params) => userService.list(params),
+    (params) => userService.list({ ...params, search: initialSearch }),
     { pageSize: 10, errorMessage: "Failed to load customers" }
   );
   const [viewing, setViewing] = useState<Customer | null>(null);
@@ -194,5 +202,13 @@ export default function CustomersPage() {
         onConfirm={handleDelete}
       />
     </div>
+  );
+}
+
+export default function CustomersPage() {
+  return (
+    <Suspense fallback={null}>
+      <CustomersPageContent />
+    </Suspense>
   );
 }

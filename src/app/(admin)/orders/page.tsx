@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
 import { Eye, Trash2 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,9 +39,16 @@ function formatHistoryValue(field: string, value: string) {
   return value;
 }
 
-export default function OrdersPage() {
+function OrdersPageContent() {
+  // Seeds the initial fetch with ?search= from the header quick-search
+  // (components/layout/header-search.tsx) — the DataTable's own search box
+  // only filters the current page client-side, so without this the target
+  // order wouldn't be visible unless it happened to already be on page 1.
+  const searchParams = useSearchParams();
+  const initialSearch = searchParams.get("search") ?? undefined;
+
   const { items: rows, setItems: setRows, isLoading, reload: loadOrders, pagination } = usePaginatedList(
-    (params) => orderService.list(params),
+    (params) => orderService.list({ ...params, search: initialSearch }),
     { pageSize: 10, errorMessage: "Failed to load orders" }
   );
   const [viewing, setViewing] = useState<Order | null>(null);
@@ -362,5 +370,13 @@ export default function OrdersPage() {
         onConfirm={handleDelete}
       />
     </div>
+  );
+}
+
+export default function OrdersPage() {
+  return (
+    <Suspense fallback={null}>
+      <OrdersPageContent />
+    </Suspense>
   );
 }

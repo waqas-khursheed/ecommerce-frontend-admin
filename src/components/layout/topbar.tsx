@@ -2,15 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Bell, LogOut, Search, Settings, User as UserIcon } from "lucide-react";
+import { Bell, LogOut, Settings, User as UserIcon } from "lucide-react";
 
 import { useAuthStore } from "@/store/auth.store";
 import { useRouter } from "next/navigation";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { Separator } from "@/components/ui/separator";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,7 +19,9 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
+import { HeaderSearch } from "@/components/layout/header-search";
 import { notificationService } from "@/services/notification.service";
+import { uploadUrl } from "@/lib/http";
 import type { Notification } from "@/types/notification";
 
 function initials(name: string) {
@@ -41,7 +42,7 @@ export function Topbar() {
   useEffect(() => {
     (async () => {
       try {
-        const { items } = await notificationService.list({ limit: 5, seen: 0 });
+        const { items } = await notificationService.list({ limit: 10, seen: 0 });
         setNotifications(items);
       } catch {
         // non-fatal — the bell just shows no unread notifications
@@ -54,18 +55,21 @@ export function Topbar() {
     router.push("/login");
   };
 
+  const handleMarkSeen = async (id: number) => {
+    try {
+      await notificationService.markSeen(id);
+      setNotifications((prev) => prev.filter((n) => n.id !== id));
+    } catch {
+      // non-fatal — worst case the notification just stays in the list
+    }
+  };
+
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-2 border-b bg-background px-4">
       <SidebarTrigger className="-ml-1" />
       <Separator orientation="vertical" className="mr-2 h-5" />
 
-      <div className="relative w-full max-w-sm">
-        <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input placeholder="Search anything..." className="pl-8 pr-12" />
-        <kbd className="pointer-events-none absolute right-2 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded border bg-muted px-1.5 font-mono text-[10px] text-muted-foreground sm:flex">
-          <span className="text-xs">⌘</span>K
-        </kbd>
-      </div>
+      <HeaderSearch />
 
       <div className="ml-auto flex items-center gap-1">
         <ThemeToggle />
@@ -88,7 +92,11 @@ export function Topbar() {
               <div className="px-2 py-3 text-sm text-muted-foreground">No new notifications</div>
             ) : (
               notifications.map((n) => (
-                <DropdownMenuItem key={n.id} className="flex flex-col items-start gap-0.5 py-2">
+                <DropdownMenuItem
+                  key={n.id}
+                  className="flex flex-col items-start gap-0.5 py-2"
+                  onClick={() => handleMarkSeen(n.id)}
+                >
                   <span className="text-sm font-medium">{n.n_title}</span>
                   <span className="text-xs text-muted-foreground">{n.n_desc}</span>
                   <span className="text-[11px] text-muted-foreground/70">
@@ -113,6 +121,7 @@ export function Topbar() {
             render={
               <Button variant="ghost" size="icon" className="rounded-full">
                 <Avatar className="size-8">
+                  {admin?.image && <AvatarImage src={uploadUrl("admins", admin.image) ?? undefined} alt={admin.name} />}
                   <AvatarFallback className="bg-primary/10 text-primary">
                     {initials(admin?.name ?? "Admin")}
                   </AvatarFallback>
@@ -128,7 +137,7 @@ export function Topbar() {
             <DropdownMenuSeparator />
             <DropdownMenuItem
               render={
-                <Link href="/settings">
+                <Link href="/profile">
                   <UserIcon />
                   Profile
                 </Link>
@@ -138,7 +147,7 @@ export function Topbar() {
               render={
                 <Link href="/settings">
                   <Settings />
-                  Settings
+                  Store settings
                 </Link>
               }
             />
