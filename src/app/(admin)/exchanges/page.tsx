@@ -21,10 +21,13 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { exchangeService } from "@/services/exchange.service";
 import { getApiErrorMessage } from "@/lib/apiError";
+import { uploadUrl } from "@/lib/http";
 import { usePaginatedList } from "@/hooks/use-paginated-list";
-import type { Exchange } from "@/types/exchange";
+import { EXCHANGE_STATUS_LABELS, type Exchange } from "@/types/exchange";
 
 export default function ExchangesPage() {
   const { items: rows, setItems: setRows, isLoading, reload: loadExchanges, pagination } = usePaginatedList(
@@ -34,9 +37,12 @@ export default function ExchangesPage() {
   const [viewing, setViewing] = useState<Exchange | null>(null);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [adminNote, setAdminNote] = useState("");
+  const [isUpdating, setIsUpdating] = useState(false);
 
   const openExchange = async (row: Exchange) => {
     setViewing(row);
+    setAdminNote(row.admin_note ?? "");
     setOpen(true);
     if (!row.seen) {
       try {
@@ -46,6 +52,21 @@ export default function ExchangesPage() {
       } catch {
         // non-fatal — the request still opens even if marking seen failed
       }
+    }
+  };
+
+  const applyStatus = async (status: 1 | 2 | 3) => {
+    if (!viewing) return;
+    setIsUpdating(true);
+    try {
+      const updated = await exchangeService.updateStatus(viewing.id, { status, admin_note: adminNote });
+      setRows((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
+      setViewing(updated);
+      toast.success(`Exchange request marked as ${EXCHANGE_STATUS_LABELS[status]}`);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to update exchange request"));
+    } finally {
+      setIsUpdating(false);
     }
   };
 
@@ -77,9 +98,9 @@ export default function ExchangesPage() {
         cell: ({ getValue }) => new Date(getValue() as string).toLocaleDateString(),
       },
       {
-        accessorKey: "seen",
+        accessorKey: "status",
         header: "Status",
-        cell: ({ getValue }) => <StatusBadge status={getValue() ? "Reviewed" : "Pending"} />,
+        cell: ({ getValue }) => <StatusBadge status={EXCHANGE_STATUS_LABELS[getValue() as 0 | 1 | 2 | 3]} />,
       },
       {
         id: "actions",
@@ -123,37 +144,68 @@ export default function ExchangesPage() {
             </SheetDescription>
           </SheetHeader>
           {viewing && (
-            <div className="flex-1 space-y-4 px-4 text-sm">
-              <div className="space-y-1">
-                <p className="text-muted-foreground">Email: {viewing.email ?? "—"}</p>
-                <p className="text-muted-foreground">Phone: {viewing.phone_number ?? "—"}</p>
+            <div className="flex-1 space-y-4 overflow-y-auto px-4 text-sm">
+              <div className="flex items-center justify-between">
+                <StatusBadge status={EXCHANGE_STATUS_LABELS[viewing.status]} />
                 {viewing.order && (
                   <p className="text-muted-foreground">Order total: ${Number(viewing.order.grand_total).toFixed(2)}</p>
                 )}
+              </div>
+
+              <div className="space-y-1">
+                <p className="text-muted-foreground">Email: {viewing.email ?? "—"}</p>
+                <p className="text-muted-foreground">Phone: {viewing.phone_number ?? "—"}</p>
               </div>
 
               <Separator />
 
               <div className="space-y-1">
                 <p className="font-medium">Returning</p>
-                <p className="text-muted-foreground">{viewing.return_item_name ?? "—"}</p>
-                {viewing.return_item_size && (
-                  <p className="text-muted-foreground">Size: {viewing.return_item_size}</p>
-                )}
-                {viewing.return_item_code && (
-                  <p className="text-muted-foreground">Code: {viewing.return_item_code}</p>
-                )}
+                <div className="flex items-center gap-3">
+                  {viewing.orderDetail?.product?.featured_image && (
+                    <img
+                      src={uploadUrl("products", viewing.orderDetail.product.featured_image) ?? undefined}
+                      alt=""
+                      className="size-12 shrink-0 rounded-md border object-cover"
+                    />
+                  )}
+                  <div>
+                    <p className="text-muted-foreground">
+                      {viewing.orderDetail?.product?.title ?? viewing.return_item_name ?? "—"}
+                      {viewing.orderDetail?.quantity ? ` × ${viewing.orderDetail.quantity}` : ""}
+                    </p>
+                    {viewing.return_item_size && (
+                      <p className="text-xs text-muted-foreground">Variant: {viewing.return_item_size}</p>
+                    )}
+                    {viewing.return_item_code && (
+                      <p className="text-xs text-muted-foreground">Code: {viewing.return_item_code}</p>
+                    )}
+                  </div>
+                </div>
               </div>
 
-              {(viewing.required_item_name || viewing.required_item_code) && (
+              {(viewing.requestedStock || viewing.required_item_name) && (
                 <>
                   <Separator />
                   <div className="space-y-1">
                     <p className="font-medium">Requested in exchange</p>
-                    <p className="text-muted-foreground">{viewing.required_item_name ?? "—"}</p>
-                    {viewing.required_item_size && (
-                      <p className="text-muted-foreground">Size: {viewing.required_item_size}</p>
-                    )}
+                    <div className="flex items-center gap-3">
+                      {viewing.requestedStock?.product?.featured_image && (
+                        <img
+                          src={uploadUrl("products", viewing.requestedStock.product.featured_image) ?? undefined}
+                          alt=""
+                          className="size-12 shrink-0 rounded-md border object-cover"
+                        />
+                      )}
+                      <div>
+                        <p className="text-muted-foreground">
+                          {viewing.requestedStock?.product?.title ?? viewing.required_item_name ?? "—"}
+                        </p>
+                        {viewing.required_item_size && (
+                          <p className="text-xs text-muted-foreground">Variant: {viewing.required_item_size}</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </>
               )}
@@ -167,9 +219,38 @@ export default function ExchangesPage() {
                   <p className="text-muted-foreground whitespace-pre-wrap">{viewing.other_detail}</p>
                 )}
               </div>
+
+              <Separator />
+
+              <div className="space-y-1.5">
+                <Label htmlFor="admin_note">Note to customer</Label>
+                <Textarea
+                  id="admin_note"
+                  rows={3}
+                  value={adminNote}
+                  onChange={(e) => setAdminNote(e.target.value)}
+                  disabled={viewing.status === 2 || viewing.status === 3}
+                  placeholder="Optional — included in the email sent to the customer"
+                />
+              </div>
             </div>
           )}
           <SheetFooter>
+            {viewing?.status === 0 && (
+              <>
+                <Button onClick={() => applyStatus(1)} disabled={isUpdating}>
+                  Approve
+                </Button>
+                <Button variant="destructive" onClick={() => applyStatus(2)} disabled={isUpdating}>
+                  Reject
+                </Button>
+              </>
+            )}
+            {viewing?.status === 1 && (
+              <Button onClick={() => applyStatus(3)} disabled={isUpdating}>
+                Mark as completed
+              </Button>
+            )}
             <SheetClose render={<Button variant="outline">Close</Button>} />
           </SheetFooter>
         </SheetContent>

@@ -49,31 +49,48 @@ function stockStatus(qty: number | null) {
   return "In stock";
 }
 
-// There's no dedicated "attribute type" flag on the backend — Color/Size/
-// Fitting are just ProductAttribute rows distinguished only by their title —
-// so the Color/Size/Fitting selects on this page match by title (accepting
-// the British "Colour" spelling too). If nobody has created a "Color" or
-// "Fitting" attribute yet under Attributes, that dropdown is legitimately
-// empty until one is; see the empty-state hint rendered next to each select.
-async function loadAttributeGroups(attributes: Attribute[]) {
-  const findByTitle = (needles: string[]) =>
-    attributes.find((a) => needles.some((n) => a.attribute_title.toLowerCase().includes(n)));
+// Stock only has 3 physical variant columns (color_id/size_id/fitting_id),
+// but they're generic slots, not literally always Color/Size/Fitting — a
+// kitchenware product might use "Capacity" and "Material" instead. Whichever
+// ProductAttribute *types* a product's existing stock rows already use get
+// sorted ascending by their real id and mapped onto the 3 slots positionally
+// (lowest id -> color_id, next -> size_id, next -> fitting_id). This must
+// stay in lockstep with frontend_user's src/lib/variants.ts, which derives
+// the same product's variant display the same way from the same data.
+const SLOT_NAMES = ["color_id", "size_id", "fitting_id"] as const;
 
-  const colorAttr = findByTitle(["color", "colour"]);
-  const sizeAttr = findByTitle(["size"]);
-  const fittingAttr = findByTitle(["fit"]);
+interface AttributeSlot {
+  attribute: Attribute;
+  items: AttributeItem[];
+}
 
-  const [colorRes, sizeRes, fittingRes] = await Promise.all([
-    colorAttr ? attributeItemService.list({ limit: 100, attribute_id: colorAttr.id }) : null,
-    sizeAttr ? attributeItemService.list({ limit: 100, attribute_id: sizeAttr.id }) : null,
-    fittingAttr ? attributeItemService.list({ limit: 100, attribute_id: fittingAttr.id }) : null,
-  ]);
+async function fetchItemsForAttribute(attributeId: number): Promise<AttributeItem[]> {
+  const res = await attributeItemService.list({ limit: 100, attribute_id: attributeId });
+  return res.items;
+}
 
-  return {
-    colors: colorRes?.items ?? [],
-    sizes: sizeRes?.items ?? [],
-    fittings: fittingRes?.items ?? [],
-  };
+async function deriveSlotsForProduct(productId: number, attributes: Attribute[]): Promise<AttributeSlot[]> {
+  const attributeById = new Map(attributes.map((a) => [a.id, a]));
+  const { items: existingStocks } = await stockService.list({ product_id: productId, limit: 100 });
+
+  const typeIds = new Set<number>();
+  for (const stock of existingStocks) {
+    if (stock.color) typeIds.add(stock.color.attribute_id);
+    if (stock.size) typeIds.add(stock.size.attribute_id);
+    if (stock.fitting) typeIds.add(stock.fitting.attribute_id);
+  }
+
+  const sortedIds = Array.from(typeIds)
+    .sort((a, b) => a - b)
+    .slice(0, SLOT_NAMES.length);
+
+  const slots: AttributeSlot[] = [];
+  for (const id of sortedIds) {
+    const attribute = attributeById.get(id);
+    if (!attribute) continue;
+    slots.push({ attribute, items: await fetchItemsForAttribute(id) });
+  }
+  return slots;
 }
 
 export default function StockPage() {
@@ -82,9 +99,12 @@ export default function StockPage() {
     { pageSize: 10, errorMessage: "Failed to load stock" }
   );
   const [products, setProducts] = useState<Product[]>([]);
-  const [colorItems, setColorItems] = useState<AttributeItem[]>([]);
-  const [sizeItems, setSizeItems] = useState<AttributeItem[]>([]);
-  const [fittingItems, setFittingItems] = useState<AttributeItem[]>([]);
+  const [attributes, setAttributes] = useState<Attribute[]>([]);
+  const [slots, setSlots] = useState<AttributeSlot[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
+  const [selectedItemIds, setSelectedItemIds] = useState<Record<number, number | undefined>>({});
+  const [pendingNewType, setPendingNewType] = useState<string | undefined>(undefined);
 
   const [editing, setEditing] = useState<Stock | null>(null);
   const [open, setOpen] = useState(false);
@@ -92,8 +112,10 @@ export default function StockPage() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
 
-  // Product/variant pickers used by the stock form — fetched once,
+  // Product list + the full catalog of attribute *types* — fetched once,
   // independent of which page of the (paginated) stock table is showing.
+  // Which types actually apply to a given product (and their item values)
+  // is derived per-product when the form opens; see loadSlotsForProduct.
   useEffect(() => {
     (async () => {
       try {
@@ -102,16 +124,50 @@ export default function StockPage() {
           attributeService.list({ limit: 100 }),
         ]);
         setProducts(productsRes.items);
-
-        const { colors, sizes, fittings } = await loadAttributeGroups(attributesRes.items);
-        setColorItems(colors);
-        setSizeItems(sizes);
-        setFittingItems(fittings);
+        setAttributes(attributesRes.items);
       } catch (error) {
         toast.error(getApiErrorMessage(error, "Failed to load stock form data"));
       }
     })();
   }, []);
+
+  const loadSlotsForProduct = async (productId: number, existingStock?: Stock | null) => {
+    setSlotsLoading(true);
+    setPendingNewType(undefined);
+    try {
+      const nextSlots = await deriveSlotsForProduct(productId, attributes);
+      setSlots(nextSlots);
+
+      const preselected: Record<number, number | undefined> = {};
+      if (existingStock) {
+        const values = [existingStock.color_id, existingStock.size_id, existingStock.fitting_id];
+        nextSlots.forEach((slot, index) => {
+          preselected[slot.attribute.id] = values[index] ?? undefined;
+        });
+      }
+      setSelectedItemIds(preselected);
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load this product's attribute types"));
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+
+  const addSlot = async (attribute: Attribute) => {
+    try {
+      const items = await fetchItemsForAttribute(attribute.id);
+      setSlots((prev) => [...prev, { attribute, items }].sort((a, b) => a.attribute.id - b.attribute.id));
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to load attribute values"));
+    } finally {
+      setPendingNewType(undefined);
+    }
+  };
+
+  const availableTypesToAdd = useMemo(
+    () => attributes.filter((a) => !slots.some((s) => s.attribute.id === a.id)),
+    [attributes, slots]
+  );
 
   const productTitleById = useMemo(() => new Map(products.map((p) => [p.id, p.title])), [products]);
 
@@ -151,8 +207,10 @@ export default function StockPage() {
             <RowActions
               onEdit={() => {
                 setEditing(row.original);
+                setSelectedProductId(row.original.product_id);
                 setErrors({});
                 setOpen(true);
+                void loadSlotsForProduct(row.original.product_id, row.original);
               }}
               onDelete={() => setDeletingId(row.original.id)}
             />
@@ -239,7 +297,16 @@ export default function StockPage() {
           >
             <SheetTrigger
               render={
-                <Button disabled={products.length === 0} onClick={() => { setEditing(null); setErrors({}); }}>
+                <Button
+                  disabled={products.length === 0}
+                  onClick={() => {
+                    setEditing(null);
+                    setErrors({});
+                    const firstProductId = products[0]?.id;
+                    setSelectedProductId(firstProductId ?? null);
+                    if (firstProductId) void loadSlotsForProduct(firstProductId);
+                  }}
+                >
                   <Plus />
                   Add Stock
                 </Button>
@@ -256,7 +323,15 @@ export default function StockPage() {
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="product_id">Product</Label>
-                    <Select name="product_id" defaultValue={String(editing?.product_id ?? products[0]?.id ?? "")}>
+                    <Select
+                      name="product_id"
+                      value={selectedProductId ? String(selectedProductId) : undefined}
+                      onValueChange={(v) => {
+                        const id = Number(v);
+                        setSelectedProductId(id);
+                        void loadSlotsForProduct(id);
+                      }}
+                    >
                       <SelectTrigger id="product_id" className="w-full">
                         <SelectValue />
                       </SelectTrigger>
@@ -270,68 +345,76 @@ export default function StockPage() {
                     </Select>
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="color_id">Color</Label>
-                      <Select name="color_id" defaultValue={editing?.color_id ? String(editing.color_id) : undefined}>
-                        <SelectTrigger id="color_id" className="w-full">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {colorItems.map((i) => (
-                            <SelectItem key={i.id} value={String(i.id)}>
-                              {i.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {colorItems.length === 0 && (
+                  {slotsLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading this product&apos;s variant types...</p>
+                  ) : (
+                    <div className="space-y-3">
+                      {slots.length > 0 && (
+                        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${slots.length}, minmax(0, 1fr))` }}>
+                          {slots.map((slot, index) => {
+                            const name = SLOT_NAMES[index];
+                            return (
+                              <div className="space-y-1.5" key={slot.attribute.id}>
+                                <Label htmlFor={name}>{slot.attribute.attribute_title}</Label>
+                                <Select
+                                  name={name}
+                                  value={
+                                    selectedItemIds[slot.attribute.id] ? String(selectedItemIds[slot.attribute.id]) : undefined
+                                  }
+                                  onValueChange={(v) =>
+                                    setSelectedItemIds((prev) => ({ ...prev, [slot.attribute.id]: Number(v) }))
+                                  }
+                                >
+                                  <SelectTrigger id={name} className="w-full">
+                                    <SelectValue placeholder="—" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {slot.items.map((i) => (
+                                      <SelectItem key={i.id} value={String(i.id)}>
+                                        {i.title}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {slots.length === 0 && (
                         <p className="text-xs text-muted-foreground">
-                          No &quot;Color&quot; attribute yet — create one under Attributes first.
+                          This product has no variant types yet — add one below (e.g. Color, Size, or anything
+                          else you&apos;ve created under Attributes) if this variation needs one.
                         </p>
                       )}
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="size_id">Size</Label>
-                      <Select name="size_id" defaultValue={editing?.size_id ? String(editing.size_id) : undefined}>
-                        <SelectTrigger id="size_id" className="w-full">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sizeItems.map((i) => (
-                            <SelectItem key={i.id} value={String(i.id)}>
-                              {i.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {sizeItems.length === 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          No &quot;Size&quot; attribute yet — create one under Attributes first.
-                        </p>
+
+                      {slots.length < SLOT_NAMES.length && availableTypesToAdd.length > 0 && (
+                        <div className="space-y-1.5">
+                          <Label>Add a variant type</Label>
+                          <Select
+                            value={pendingNewType}
+                            onValueChange={(v) => {
+                              setPendingNewType(v ?? undefined);
+                              const attribute = availableTypesToAdd.find((a) => String(a.id) === v);
+                              if (attribute) void addSlot(attribute);
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue placeholder="e.g. Color, Size, Capacity..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {availableTypesToAdd.map((a) => (
+                                <SelectItem key={a.id} value={String(a.id)}>
+                                  {a.attribute_title}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
                       )}
                     </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="fitting_id">Fitting</Label>
-                      <Select name="fitting_id" defaultValue={editing?.fitting_id ? String(editing.fitting_id) : undefined}>
-                        <SelectTrigger id="fitting_id" className="w-full">
-                          <SelectValue placeholder="—" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {fittingItems.map((i) => (
-                            <SelectItem key={i.id} value={String(i.id)}>
-                              {i.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      {fittingItems.length === 0 && (
-                        <p className="text-xs text-muted-foreground">
-                          No &quot;Fitting&quot; attribute yet — create one under Attributes first.
-                        </p>
-                      )}
-                    </div>
-                  </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
