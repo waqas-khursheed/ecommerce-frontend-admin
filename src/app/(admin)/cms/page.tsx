@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -45,7 +46,7 @@ import { commonPageService, contactUsPageService, faqCategoryService, faqService
 import type { CommonPage, ContactUsPage, Faq, FaqCategory } from "@/types/cms";
 
 function FaqCategoriesTab() {
-  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => faqCategoryService.list(params),
     { pageSize: 10, errorMessage: "Failed to load FAQ categories" }
   );
@@ -151,14 +152,14 @@ function FaqCategoriesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search categories..." searchColumn="title" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search categories..." searchColumn="title" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this category?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function FaqsTab() {
-  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => faqService.list(params),
     { pageSize: 10, errorMessage: "Failed to load FAQs" }
   );
@@ -311,14 +312,14 @@ function FaqsTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search FAQs..." searchColumn="question" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search FAQs..." searchColumn="question" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this FAQ?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function PagesTab() {
-  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => commonPageService.list(params),
     { pageSize: 10, errorMessage: "Failed to load pages" }
   );
@@ -485,7 +486,7 @@ function PagesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search pages..." searchColumn="title" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search pages..." searchColumn="title" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this page?" onConfirm={handleDelete} />
     </div>
   );
@@ -538,7 +539,7 @@ function ContactUsTab() {
     }
   };
 
-  if (isLoading) return null;
+  if (isLoading) return <Skeleton className="h-96 max-w-xl rounded-xl" />;
 
   return (
     <Card className="max-w-xl">

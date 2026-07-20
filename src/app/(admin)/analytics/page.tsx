@@ -6,6 +6,7 @@ import { CalendarClock, DollarSign, Package, ShoppingCart } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
 import { BarListCard } from "@/components/dashboard/bar-list-card";
 import { TopProductsTable } from "@/components/dashboard/top-products-table";
 import type { DonutSlice } from "@/components/dashboard/donut-legend-card";
@@ -53,7 +54,24 @@ export default function AnalyticsPage() {
   if (isLoading || !overview || !orderStats) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader title="Report Analysis" description="Loading..." />
+        <PageHeader
+          title="Report Analysis"
+          description="Track your business performance and key metrics."
+          breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Report Analysis" }]}
+        />
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))}
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-3">
+          <Skeleton className="h-72 rounded-xl xl:col-span-2" />
+          <Skeleton className="h-72 rounded-xl" />
+        </div>
+
+        <Skeleton className="h-80 rounded-xl" />
       </div>
     );
   }

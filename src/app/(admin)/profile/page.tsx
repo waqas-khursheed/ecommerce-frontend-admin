@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { ImageUploadField } from "@/components/data-table/image-upload-field";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -201,7 +202,21 @@ export default function ProfilePage() {
     updateAdmin(updated);
   };
 
-  if (isLoading || !admin) return null;
+  if (isLoading || !admin) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title="My Profile"
+          description="Manage your own admin account."
+          breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Profile" }]}
+        />
+        <div className="flex flex-col gap-6">
+          <Skeleton className="h-56 max-w-2xl rounded-xl" />
+          <Skeleton className="h-64 max-w-2xl rounded-xl" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">

@@ -42,7 +42,7 @@ import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Brand } from "@/types/brand";
 
 export default function BrandsPage() {
-  const { items: rows, isLoading, reload: loadBrands, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: loadBrands, pagination, search, setSearch } = usePaginatedList(
     (params) => brandService.list(params),
     { pageSize: 10, errorMessage: "Failed to load brands" }
   );
@@ -182,7 +182,7 @@ export default function BrandsPage() {
                 </SheetHeader>
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="title">Name</Label>
+                    <Label htmlFor="title" required>Name</Label>
                     <Input
                       id="title"
                       name="title"
@@ -251,6 +251,7 @@ export default function BrandsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search brands..."
         searchColumn="title"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

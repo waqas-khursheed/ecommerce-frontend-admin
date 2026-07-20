@@ -6,6 +6,7 @@ import { DollarSign, Package, Receipt, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
+import { Skeleton } from "@/components/ui/skeleton";
 import { ProgressListCard, type ProgressGoal } from "@/components/dashboard/progress-list-card";
 import { TopProductsTable } from "@/components/dashboard/top-products-table";
 import type { ChartSeries } from "@/components/dashboard/chart-card";
@@ -68,7 +69,23 @@ export default function DashboardPage() {
   if (isLoading || !overview || !orderStats) {
     return (
       <div className="flex flex-col gap-6">
-        <PageHeader title="Dashboard" description="Loading your business overview..." />
+        <PageHeader title="Dashboard" description="Welcome back. Here's what's happening with your business today." />
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 rounded-xl" />
+          ))}
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-3">
+          <Skeleton className="h-72 rounded-xl xl:col-span-2" />
+          <Skeleton className="h-72 rounded-xl" />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-3">
+          <Skeleton className="h-72 rounded-xl xl:col-span-2" />
+          <Skeleton className="h-72 rounded-xl" />
+        </div>
       </div>
     );
   }

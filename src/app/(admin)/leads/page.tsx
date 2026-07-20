@@ -28,7 +28,7 @@ import { queryFormService, subscriberService } from "@/services/lead.service";
 import type { QueryForm, Subscriber } from "@/types/lead";
 
 function QueryFormsTab() {
-  const { items: rows, setItems: setRows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, setItems: setRows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => queryFormService.list(params),
     { pageSize: 10, errorMessage: "Failed to load messages" }
   );
@@ -82,7 +82,7 @@ function QueryFormsTab() {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
-            <Button variant="ghost" size="icon" className="size-8" onClick={() => openMessage(row.original)}>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="View message" onClick={() => openMessage(row.original)}>
               <Eye className="size-4" />
             </Button>
             <RowActions onDelete={() => setDeletingId(row.original.id)} />
@@ -95,7 +95,7 @@ function QueryFormsTab() {
 
   return (
     <div className="space-y-4">
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search messages..." searchColumn="name" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search messages..." searchColumn="name" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
 
       <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setViewing(null); }}>
         <SheetContent>
@@ -125,7 +125,7 @@ function QueryFormsTab() {
 }
 
 function SubscribersTab() {
-  const { items: rows, setItems: setRows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, setItems: setRows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => subscriberService.list(params),
     { pageSize: 10, errorMessage: "Failed to load subscribers" }
   );
@@ -186,7 +186,7 @@ function SubscribersTab() {
 
   return (
     <div className="space-y-4">
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search subscribers..." searchColumn="email" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search subscribers..." searchColumn="email" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog
         open={deletingId !== null}
         onOpenChange={(v) => !v && setDeletingId(null)}

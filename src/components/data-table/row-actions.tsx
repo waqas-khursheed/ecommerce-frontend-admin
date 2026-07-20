@@ -21,7 +21,7 @@ export function RowActions({ onView, onEdit, onDelete }: RowActionsProps) {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <Button variant="ghost" size="icon" className="size-8">
+          <Button variant="ghost" size="icon" className="size-8" aria-label="Row actions">
             <MoreHorizontal className="size-4" />
           </Button>
         }

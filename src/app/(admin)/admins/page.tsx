@@ -38,10 +38,18 @@ import type { Admin } from "@/types/auth";
 
 function AdminsTable() {
   const currentAdmin = useAuthStore((state) => state.admin);
-  const { items: rows, setItems: setRows, isLoading, reload: loadAdmins, pagination } = usePaginatedList(
-    (params) => adminAccountService.list(params),
-    { pageSize: 10, errorMessage: "Failed to load admins" }
-  );
+  const {
+    items: rows,
+    setItems: setRows,
+    isLoading,
+    reload: loadAdmins,
+    pagination,
+    search,
+    setSearch,
+  } = usePaginatedList((params) => adminAccountService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load admins",
+  });
   const [open, setOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -220,6 +228,7 @@ function AdminsTable() {
         isLoading={isLoading}
         searchPlaceholder="Search admins..."
         searchColumn="name"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

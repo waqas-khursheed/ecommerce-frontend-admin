@@ -46,6 +46,8 @@ export default function AttributesPage() {
     isLoading: isLoadingAttributes,
     reload: loadAttributes,
     pagination: attributesPagination,
+    search: attributesSearch,
+    setSearch: setAttributesSearch,
   } = usePaginatedList((params) => attributeService.list(params), {
     pageSize: 10,
     errorMessage: "Failed to load attributes",
@@ -55,6 +57,8 @@ export default function AttributesPage() {
     isLoading: isLoadingItems,
     reload: loadItems,
     pagination: itemsPagination,
+    search: itemsSearch,
+    setSearch: setItemsSearch,
   } = usePaginatedList((params) => attributeItemService.list(params), {
     pageSize: 10,
     errorMessage: "Failed to load attribute items",
@@ -329,7 +333,7 @@ export default function AttributesPage() {
                   </SheetHeader>
                   <div className="flex-1 space-y-4 px-4">
                     <div className="space-y-1.5">
-                      <Label htmlFor="attribute_title">Name</Label>
+                      <Label htmlFor="attribute_title" required>Name</Label>
                       <Input
                         id="attribute_title"
                         name="attribute_title"
@@ -359,6 +363,7 @@ export default function AttributesPage() {
             isLoading={isLoadingAttributes}
             searchPlaceholder="Search attributes..."
             searchColumn="attribute_title"
+            serverSearch={{ value: attributesSearch, onChange: setAttributesSearch }}
             pagination={attributesPagination}
           />
         </TabsContent>
@@ -418,7 +423,7 @@ export default function AttributesPage() {
                       <FieldError message={itemErrors.attribute_id} />
                     </div>
                     <div className="space-y-1.5">
-                      <Label htmlFor="title">Value</Label>
+                      <Label htmlFor="title" required>Value</Label>
                       <Input
                         id="title"
                         name="title"
@@ -455,6 +460,7 @@ export default function AttributesPage() {
             isLoading={isLoadingItems}
             searchPlaceholder="Search items..."
             searchColumn="title"
+            serverSearch={{ value: itemsSearch, onChange: setItemsSearch }}
             pagination={itemsPagination}
           />
         </TabsContent>

@@ -107,7 +107,7 @@ export default function ExchangesPage() {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
-            <Button variant="ghost" size="icon" className="size-8" onClick={() => openExchange(row.original)}>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="View exchange" onClick={() => openExchange(row.original)}>
               <Eye className="size-4" />
             </Button>
             <RowActions onDelete={() => setDeletingId(row.original.id)} />

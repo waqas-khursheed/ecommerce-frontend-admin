@@ -43,7 +43,7 @@ import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Category } from "@/types/category";
 
 export default function CategoriesPage() {
-  const { items: rows, isLoading, reload: loadCategories, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: loadCategories, pagination, search, setSearch } = usePaginatedList(
     (params) => categoryService.list(params),
     { pageSize: 10, errorMessage: "Failed to load categories" }
   );
@@ -220,7 +220,7 @@ export default function CategoriesPage() {
                 </SheetHeader>
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="title">Name</Label>
+                    <Label htmlFor="title" required>Name</Label>
                     <Input
                       id="title"
                       name="title"
@@ -337,6 +337,7 @@ export default function CategoriesPage() {
         isLoading={isLoading}
         searchPlaceholder="Search categories..."
         searchColumn="title"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

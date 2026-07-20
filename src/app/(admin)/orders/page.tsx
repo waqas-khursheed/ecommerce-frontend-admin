@@ -40,17 +40,27 @@ function formatHistoryValue(field: string, value: string) {
 }
 
 function OrdersPageContent() {
-  // Seeds the initial fetch with ?search= from the header quick-search
-  // (components/layout/header-search.tsx) — the DataTable's own search box
-  // only filters the current page client-side, so without this the target
-  // order wouldn't be visible unless it happened to already be on page 1.
+  // Seeds the search box with ?search= from the header quick-search
+  // (components/layout/header-search.tsx) so the target order is visible
+  // immediately, on top of usePaginatedList's search genuinely filtering
+  // the whole list server-side (not just whatever page happens to be
+  // loaded).
   const searchParams = useSearchParams();
-  const initialSearch = searchParams.get("search") ?? undefined;
+  const initialSearch = searchParams.get("search") ?? "";
 
-  const { items: rows, setItems: setRows, isLoading, reload: loadOrders, pagination } = usePaginatedList(
-    (params) => orderService.list({ ...params, search: initialSearch }),
-    { pageSize: 10, errorMessage: "Failed to load orders" }
-  );
+  const {
+    items: rows,
+    setItems: setRows,
+    isLoading,
+    reload: loadOrders,
+    pagination,
+    search,
+    setSearch,
+  } = usePaginatedList((params) => orderService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load orders",
+    initialSearch,
+  });
   const [viewing, setViewing] = useState<Order | null>(null);
   const [open, setOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
@@ -166,13 +176,14 @@ function OrdersPageContent() {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end gap-1">
-            <Button variant="ghost" size="icon" className="size-8" onClick={() => openOrder(row.original.id)}>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="View order" onClick={() => openOrder(row.original.id)}>
               <Eye className="size-4" />
             </Button>
             <Button
               variant="ghost"
               size="icon"
               className="size-8 text-red-600 hover:text-red-600"
+              aria-label="Delete order"
               onClick={() => setDeletingId(row.original.id)}
             >
               <Trash2 className="size-4" />
@@ -198,6 +209,7 @@ function OrdersPageContent() {
         isLoading={isLoading}
         searchPlaceholder="Search by order number..."
         searchColumn="order_number"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

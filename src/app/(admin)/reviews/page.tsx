@@ -99,6 +99,7 @@ export default function ReviewsPage() {
                 variant="ghost"
                 size="icon"
                 className="size-8 text-emerald-600 hover:text-emerald-600"
+                aria-label="Approve review"
                 onClick={() => setStatus(row.original.id, 1)}
               >
                 <Check className="size-4" />
@@ -109,6 +110,7 @@ export default function ReviewsPage() {
                 variant="ghost"
                 size="icon"
                 className="size-8 text-red-600 hover:text-red-600"
+                aria-label="Reject review"
                 onClick={() => setStatus(row.original.id, 2)}
               >
                 <X className="size-4" />

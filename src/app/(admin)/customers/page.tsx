@@ -29,17 +29,27 @@ import { usePaginatedList } from "@/hooks/use-paginated-list";
 import type { Customer } from "@/types/customer";
 
 function CustomersPageContent() {
-  // Seeds the initial fetch with ?search= from the header quick-search
-  // (components/layout/header-search.tsx) — the DataTable's own search box
-  // only filters the current page client-side, so without this the target
-  // customer wouldn't be visible unless it happened to already be on page 1.
+  // Seeds the search box with ?search= from the header quick-search
+  // (components/layout/header-search.tsx) so the target customer is visible
+  // immediately, on top of usePaginatedList — search — genuinely filtering
+  // the whole list server-side (not just whatever page happens to be
+  // loaded).
   const searchParams = useSearchParams();
-  const initialSearch = searchParams.get("search") ?? undefined;
+  const initialSearch = searchParams.get("search") ?? "";
 
-  const { items: rows, setItems: setRows, isLoading, reload: loadCustomers, pagination } = usePaginatedList(
-    (params) => userService.list({ ...params, search: initialSearch }),
-    { pageSize: 10, errorMessage: "Failed to load customers" }
-  );
+  const {
+    items: rows,
+    setItems: setRows,
+    isLoading,
+    reload: loadCustomers,
+    pagination,
+    search,
+    setSearch,
+  } = usePaginatedList((params) => userService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load customers",
+    initialSearch,
+  });
   const [viewing, setViewing] = useState<Customer | null>(null);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
@@ -115,7 +125,7 @@ function CustomersPageContent() {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end">
-            <Button variant="ghost" size="icon" className="size-8" onClick={() => openCustomer(row.original.id)}>
+            <Button variant="ghost" size="icon" className="size-8" aria-label="View customer" onClick={() => openCustomer(row.original.id)}>
               <Eye className="size-4" />
             </Button>
           </div>
@@ -139,6 +149,7 @@ function CustomersPageContent() {
         isLoading={isLoading}
         searchPlaceholder="Search customers..."
         searchColumn="name"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

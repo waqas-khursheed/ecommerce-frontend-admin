@@ -14,6 +14,10 @@ export interface WebSetting {
   footer_widget_2: string | null;
   footer_widget_3: string | null;
   footer_widget_4: string | null;
+  facebook: string | null;
+  instagram: string | null;
+  twitter: string | null;
+  youtube: string | null;
   service_for: string;
   dynamic_module_name: string;
   delivery_days: string | null;

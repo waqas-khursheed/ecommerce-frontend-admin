@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { ImageUploadField } from "@/components/data-table/image-upload-field";
+import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -55,6 +56,10 @@ export default function SettingsPage() {
       footer_widget_2: String(formData.get("footer_widget_2") ?? ""),
       footer_widget_3: String(formData.get("footer_widget_3") ?? ""),
       footer_widget_4: String(formData.get("footer_widget_4") ?? ""),
+      facebook: String(formData.get("facebook") ?? ""),
+      instagram: String(formData.get("instagram") ?? ""),
+      twitter: String(formData.get("twitter") ?? ""),
+      youtube: String(formData.get("youtube") ?? ""),
       delivery_start_time: String(formData.get("delivery_start_time") ?? ""),
       delivery_end_time: String(formData.get("delivery_end_time") ?? ""),
       min_amount_for_free_delivery: String(formData.get("min_amount_for_free_delivery") ?? "0"),
@@ -80,6 +85,10 @@ export default function SettingsPage() {
       "footer_widget_2",
       "footer_widget_3",
       "footer_widget_4",
+      "facebook",
+      "instagram",
+      "twitter",
+      "youtube",
       "delivery_days",
       "delivery_start_time",
       "delivery_end_time",
@@ -112,7 +121,19 @@ export default function SettingsPage() {
     }
   };
 
-  if (isLoading) return null;
+  if (isLoading) {
+    return (
+      <div className="flex flex-col gap-6">
+        <PageHeader
+          title="Settings"
+          description="Manage global store configuration."
+          breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Settings" }]}
+        />
+        <Skeleton className="h-10 w-72 rounded-lg" />
+        <Skeleton className="h-[32rem] max-w-2xl rounded-xl" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -371,15 +392,57 @@ export default function SettingsPage() {
             <Card>
               <CardHeader>
                 <CardTitle>Social Links</CardTitle>
-                <CardDescription>Shown in the storefront footer.</CardDescription>
+                <CardDescription>Shown in the storefront footer and header. Leave blank to hide an icon.</CardDescription>
               </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  The backend&apos;s <code>web_settings</code> table has no social-link columns yet
-                  (checked <code>WebSetting.js</code> and its migration — there&apos;s no
-                  facebook/instagram/twitter field). This tab is a placeholder until those columns
-                  and validation are added on the backend; nothing here is wired up.
-                </p>
+              <CardContent className="space-y-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="facebook">Facebook</Label>
+                  <Input
+                    id="facebook"
+                    name="facebook"
+                    placeholder="https://facebook.com/yourpage"
+                    defaultValue={data?.facebook ?? ""}
+                    aria-invalid={!!errors.facebook}
+                    onChange={() => errors.facebook && setErrors((prev) => ({ ...prev, facebook: "" }))}
+                  />
+                  <FieldError message={errors.facebook} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="instagram">Instagram</Label>
+                  <Input
+                    id="instagram"
+                    name="instagram"
+                    placeholder="https://instagram.com/yourpage"
+                    defaultValue={data?.instagram ?? ""}
+                    aria-invalid={!!errors.instagram}
+                    onChange={() => errors.instagram && setErrors((prev) => ({ ...prev, instagram: "" }))}
+                  />
+                  <FieldError message={errors.instagram} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="twitter">Twitter / X</Label>
+                  <Input
+                    id="twitter"
+                    name="twitter"
+                    placeholder="https://twitter.com/yourpage"
+                    defaultValue={data?.twitter ?? ""}
+                    aria-invalid={!!errors.twitter}
+                    onChange={() => errors.twitter && setErrors((prev) => ({ ...prev, twitter: "" }))}
+                  />
+                  <FieldError message={errors.twitter} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="youtube">YouTube</Label>
+                  <Input
+                    id="youtube"
+                    name="youtube"
+                    placeholder="https://youtube.com/yourchannel"
+                    defaultValue={data?.youtube ?? ""}
+                    aria-invalid={!!errors.youtube}
+                    onChange={() => errors.youtube && setErrors((prev) => ({ ...prev, youtube: "" }))}
+                  />
+                  <FieldError message={errors.youtube} />
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

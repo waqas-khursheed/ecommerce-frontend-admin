@@ -26,6 +26,7 @@ import {
   SheetTrigger,
 } from "@/components/ui/sheet";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import { tagService } from "@/services/tag.service";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
@@ -73,7 +74,7 @@ function MetaTagsEditor({ tagId }: { tagId: number }) {
     }
   };
 
-  if (isLoading) return null;
+  if (isLoading) return <Skeleton className="h-24 rounded-lg" />;
 
   return (
     <div className="space-y-2">
@@ -114,7 +115,7 @@ function MetaTagsEditor({ tagId }: { tagId: number }) {
 }
 
 export default function TagsPage() {
-  const { items: rows, isLoading, reload: loadTags, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: loadTags, pagination, search, setSearch } = usePaginatedList(
     (params) => tagService.list(params),
     { pageSize: 10, errorMessage: "Failed to load tags" }
   );
@@ -237,7 +238,7 @@ export default function TagsPage() {
                 </SheetHeader>
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="name">Name</Label>
+                    <Label htmlFor="name" required>Name</Label>
                     <Input
                       id="name"
                       name="name"
@@ -311,6 +312,7 @@ export default function TagsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search tags..."
         searchColumn="name"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

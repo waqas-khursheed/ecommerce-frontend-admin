@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -42,7 +43,7 @@ import type { City, Country, GeoZone, State } from "@/types/location";
 import type { Product } from "@/types/product";
 
 function CountriesTab() {
-  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => countryService.list(params),
     { pageSize: 10, errorMessage: "Failed to load countries" }
   );
@@ -160,14 +161,14 @@ function CountriesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search countries..." searchColumn="country_name" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search countries..." searchColumn="country_name" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this country?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function StatesTab() {
-  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => stateService.list(params),
     { pageSize: 10, errorMessage: "Failed to load states" }
   );
@@ -302,14 +303,14 @@ function StatesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search states..." searchColumn="name" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search states..." searchColumn="name" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this state?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function CitiesTab() {
-  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => cityService.list(params),
     { pageSize: 10, errorMessage: "Failed to load cities" }
   );
@@ -444,14 +445,14 @@ function CitiesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search cities..." searchColumn="name" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search cities..." searchColumn="name" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this city?" onConfirm={handleDelete} />
     </div>
   );
 }
 
 function GeoZonesTab() {
-  const { items: rows, isLoading, reload: load, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: load, pagination, search, setSearch } = usePaginatedList(
     (params) => geoZoneService.list(params),
     { pageSize: 10, errorMessage: "Failed to load geo zones" }
   );
@@ -567,7 +568,7 @@ function GeoZonesTab() {
           </SheetContent>
         </Sheet>
       </div>
-      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search zones..." searchColumn="name" pagination={pagination} />
+      <DataTable columns={columns} data={rows} isLoading={isLoading} searchPlaceholder="Search zones..." searchColumn="name" serverSearch={{ value: search, onChange: setSearch }} pagination={pagination} />
       <ConfirmDeleteDialog open={deletingId !== null} onOpenChange={(v) => !v && setDeletingId(null)} title="Delete this zone?" onConfirm={handleDelete} />
     </div>
   );
@@ -634,7 +635,7 @@ function ProductAvailabilityTab() {
     }
   };
 
-  if (isLoading) return null;
+  if (isLoading) return <Skeleton className="h-96 rounded-xl" />;
 
   return (
     <div className="space-y-4">

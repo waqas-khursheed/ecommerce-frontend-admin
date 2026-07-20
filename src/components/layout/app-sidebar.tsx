@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { LogOut, Zap } from "lucide-react";
 
 import { NAV_SECTIONS } from "@/config/nav";
 import { useAuthStore } from "@/store/auth.store";
+import { webSettingService } from "@/services/setting.service";
+import { uploadUrl } from "@/lib/http";
 import {
   Sidebar,
   SidebarContent,
@@ -41,6 +44,18 @@ export function AppSidebar() {
   const router = useRouter();
   const admin = useAuthStore((state) => state.admin);
   const logout = useAuthStore((state) => state.logout);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [siteName, setSiteName] = useState<string | null>(null);
+
+  useEffect(() => {
+    webSettingService
+      .get()
+      .then((setting) => {
+        setLogoUrl(uploadUrl("settings", setting?.main_logo ?? undefined));
+        setSiteName(setting?.website_name ?? null);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleLogout = () => {
     logout();
@@ -51,11 +66,16 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <div className="flex items-center gap-2 px-2 py-1.5">
-          <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Zap className="size-4" fill="currentColor" />
-          </div>
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={logoUrl} alt={siteName ?? "Store logo"} className="size-11 shrink-0 rounded-lg object-contain" />
+          ) : (
+            <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+              <Zap className="size-4" fill="currentColor" />
+            </div>
+          )}
           <div className="grid flex-1 text-left leading-tight group-data-[collapsible=icon]:hidden">
-            <span className="truncate font-semibold">Ecommerce</span>
+            <span className="truncate font-semibold">{siteName ?? "Ecommerce"}</span>
             <span className="truncate text-xs text-sidebar-foreground/70">Admin Panel</span>
           </div>
         </div>

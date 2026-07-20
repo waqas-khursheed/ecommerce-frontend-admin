@@ -49,7 +49,7 @@ import type { Brand } from "@/types/brand";
 import type { ProductTag } from "@/types/tag";
 
 export default function ProductsPage() {
-  const { items: rows, isLoading, reload: loadAll, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: loadAll, pagination, search, setSearch } = usePaginatedList(
     (params) => productService.list(params),
     { pageSize: 10, errorMessage: "Failed to load products" }
   );
@@ -324,7 +324,7 @@ export default function ProductsPage() {
                   <section className="space-y-4">
                     <h3 className="text-sm font-semibold text-muted-foreground">Basic info</h3>
                     <div className="space-y-1.5">
-                      <Label htmlFor="title">Title</Label>
+                      <Label htmlFor="title" required>Title</Label>
                       <Input
                         id="title"
                         name="title"
@@ -358,7 +358,7 @@ export default function ProductsPage() {
                     <h3 className="text-sm font-semibold text-muted-foreground">Pricing & inventory</h3>
                     <div className="grid grid-cols-3 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="price">Price</Label>
+                        <Label htmlFor="price" required>Price</Label>
                         <Input
                           id="price"
                           name="price"
@@ -398,7 +398,7 @@ export default function ProductsPage() {
                     </div>
                     <div className="grid grid-cols-2 gap-3">
                       <div className="space-y-1.5">
-                        <Label htmlFor="quantity">Quantity</Label>
+                        <Label htmlFor="quantity" required>Quantity</Label>
                         <Input
                           id="quantity"
                           name="quantity"
@@ -462,6 +462,7 @@ export default function ProductsPage() {
                               <button
                                 type="button"
                                 onClick={() => handleRemoveGalleryImage(g.id)}
+                                aria-label="Remove gallery image"
                                 className="absolute -right-1.5 -top-1.5 flex size-5 items-center justify-center rounded-full bg-destructive text-destructive-foreground"
                               >
                                 <Trash2 className="size-3" />
@@ -592,6 +593,7 @@ export default function ProductsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search products..."
         searchColumn="title"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

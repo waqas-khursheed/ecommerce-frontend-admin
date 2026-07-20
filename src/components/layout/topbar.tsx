@@ -77,7 +77,7 @@ export function Topbar() {
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button variant="ghost" size="icon" className="relative rounded-full">
+              <Button variant="ghost" size="icon" className="relative rounded-full" aria-label="Notifications">
                 <Bell className="size-4" />
                 {notifications.length > 0 && (
                   <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-destructive" />
@@ -119,7 +119,7 @@ export function Topbar() {
         <DropdownMenu>
           <DropdownMenuTrigger
             render={
-              <Button variant="ghost" size="icon" className="rounded-full">
+              <Button variant="ghost" size="icon" className="rounded-full" aria-label="Account menu">
                 <Avatar className="size-8">
                   {admin?.image && <AvatarImage src={uploadUrl("admins", admin.image) ?? undefined} alt={admin.name} />}
                   <AvatarFallback className="bg-primary/10 text-primary">

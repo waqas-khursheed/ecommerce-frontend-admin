@@ -43,7 +43,7 @@ import type { Coupon, CouponUsage } from "@/types/coupon";
 import type { Category } from "@/types/category";
 
 export default function CouponsPage() {
-  const { items: rows, isLoading, reload: loadCoupons, pagination } = usePaginatedList(
+  const { items: rows, isLoading, reload: loadCoupons, pagination, search, setSearch } = usePaginatedList(
     (params) => couponService.list(params),
     { pageSize: 10, errorMessage: "Failed to load coupons" }
   );
@@ -260,7 +260,7 @@ export default function CouponsPage() {
                 </SheetHeader>
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
-                    <Label htmlFor="code">Code</Label>
+                    <Label htmlFor="code" required>Code</Label>
                     <Input
                       id="code"
                       name="code"
@@ -273,7 +273,7 @@ export default function CouponsPage() {
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div className="space-y-1.5">
-                      <Label htmlFor="percentage">Discount %</Label>
+                      <Label htmlFor="percentage" required>Discount %</Label>
                       <Input
                         id="percentage"
                         name="percentage"
@@ -383,6 +383,7 @@ export default function CouponsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search coupons..."
         searchColumn="code"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 

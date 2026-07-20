@@ -411,6 +411,7 @@ function BannerTab({ config }: { config: BannerConfig<BannerBase & Record<string
               variant="outline"
               size="icon"
               className="size-8"
+              aria-label="Previous page"
               onClick={() => pagination.onPageChange(pagination.page - 1)}
               disabled={pagination.page <= 1}
             >
@@ -420,6 +421,7 @@ function BannerTab({ config }: { config: BannerConfig<BannerBase & Record<string
               variant="outline"
               size="icon"
               className="size-8"
+              aria-label="Next page"
               onClick={() => pagination.onPageChange(pagination.page + 1)}
               disabled={pagination.page >= pagination.totalPages}
             >

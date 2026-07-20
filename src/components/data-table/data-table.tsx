@@ -47,12 +47,23 @@ export interface ServerPagination {
   onPageChange: (page: number) => void;
 }
 
+// When provided, the search box is "controlled" — it just reflects
+// `value`/`onChange` and the table trusts `data` is already filtered
+// server-side (via usePaginatedList's `search` param). Without this, the
+// table falls back to filtering `data` client-side, which is only correct
+// when `data` holds the entire list (not one page of a larger one).
+export interface ServerSearch {
+  value: string;
+  onChange: (value: string) => void;
+}
+
 interface DataTableProps<TData> {
   columns: ColumnDef<TData, unknown>[];
   data: TData[];
   isLoading?: boolean;
   searchPlaceholder?: string;
   searchColumn?: string;
+  serverSearch?: ServerSearch;
   filterTabs?: FilterTab[];
   filterColumn?: string;
   toolbarActions?: ReactNode;
@@ -65,32 +76,40 @@ export function DataTable<TData>({
   isLoading = false,
   searchPlaceholder = "Search...",
   searchColumn,
+  serverSearch,
   filterTabs,
   filterColumn,
   toolbarActions,
   pagination,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
-  const [globalFilter, setGlobalFilter] = useState("");
+  const [localFilter, setLocalFilter] = useState("");
   const [activeTab, setActiveTab] = useState(filterTabs?.[0]?.value ?? "all");
+
+  const globalFilter = serverSearch ? serverSearch.value : localFilter;
+  const setGlobalFilter = serverSearch ? serverSearch.onChange : setLocalFilter;
 
   const table = useReactTable({
     data,
     columns,
-    state: { sorting, globalFilter },
+    // In server-search mode `data` is already filtered by the caller, so
+    // `globalFilter` is left out of controlled state entirely — nothing
+    // feeds the table's own filter state a value, so getFilteredRowModel/
+    // globalFilterFn below stay inert (harmless to leave wired either way).
+    state: serverSearch ? { sorting } : { sorting, globalFilter },
     onSortingChange: setSorting,
     onGlobalFilterChange: setGlobalFilter,
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
-    // In server-pagination mode `data` is already just one page's worth, so
-    // there's nothing to slice further client-side.
-    ...(pagination ? {} : { getPaginationRowModel: getPaginationRowModel() }),
     globalFilterFn: (row, _columnId, filterValue) => {
       if (!searchColumn) return true;
       const value = String(row.getValue(searchColumn) ?? "").toLowerCase();
       return value.includes(String(filterValue).toLowerCase());
     },
+    // In server-pagination mode `data` is already just one page's worth, so
+    // there's nothing to slice further client-side.
+    ...(pagination ? {} : { getPaginationRowModel: getPaginationRowModel() }),
     initialState: { pagination: { pageSize: 10 } },
   });
 
@@ -198,6 +217,7 @@ export function DataTable<TData>({
               variant="outline"
               size="icon"
               className="size-8"
+              aria-label="Previous page"
               onClick={() => pagination.onPageChange(pagination.page - 1)}
               disabled={pagination.page <= 1}
             >
@@ -207,6 +227,7 @@ export function DataTable<TData>({
               variant="outline"
               size="icon"
               className="size-8"
+              aria-label="Next page"
               onClick={() => pagination.onPageChange(pagination.page + 1)}
               disabled={pagination.page >= pagination.totalPages}
             >
@@ -253,6 +274,7 @@ export function DataTable<TData>({
                 variant="outline"
                 size="icon"
                 className="size-8"
+                aria-label="Previous page"
                 onClick={() => table.previousPage()}
                 disabled={!table.getCanPreviousPage()}
               >
@@ -262,6 +284,7 @@ export function DataTable<TData>({
                 variant="outline"
                 size="icon"
                 className="size-8"
+                aria-label="Next page"
                 onClick={() => table.nextPage()}
                 disabled={!table.getCanNextPage()}
               >
