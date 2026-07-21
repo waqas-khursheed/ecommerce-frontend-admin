@@ -21,13 +21,23 @@ import { FieldError } from "@/components/ui/field-error";
 import { webSettingService } from "@/services/setting.service";
 import type { WebSetting } from "@/types/setting";
 
+// Admins naturally type/paste URLs without a scheme ("facebook.com/wkstore"),
+// but both the Zod (.url()) and backend Joi (.uri()) validation require one —
+// and the stored value has to have one anyway, or the storefront's <a href>
+// would resolve it as a relative link instead of an external one. Fill in
+// https:// rather than reject the input.
+function normalizeUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 export default function SettingsPage() {
   const [data, setData] = useState<WebSetting | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [mainLogoFile, setMainLogoFile] = useState<File | null>(null);
   const [favIconFile, setFavIconFile] = useState<File | null>(null);
-  const [paymentLogoFile, setPaymentLogoFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
 
   useEffect(() => {
@@ -45,21 +55,17 @@ export default function SettingsPage() {
 
   const handleSubmit = async (formData: FormData) => {
     const { data: validated, errors: validationErrors } = validateForm(webSettingSchema, {
-      website_link: String(formData.get("website_link") ?? ""),
+      website_link: normalizeUrl(String(formData.get("website_link") ?? "")),
       website_name: String(formData.get("website_name") ?? ""),
       address: String(formData.get("address") ?? ""),
       email: String(formData.get("email") ?? ""),
       phone_one: String(formData.get("phone_one") ?? ""),
       phone_two: String(formData.get("phone_two") ?? ""),
       copyright: String(formData.get("copyright") ?? ""),
-      footer_widget_1: String(formData.get("footer_widget_1") ?? ""),
-      footer_widget_2: String(formData.get("footer_widget_2") ?? ""),
-      footer_widget_3: String(formData.get("footer_widget_3") ?? ""),
-      footer_widget_4: String(formData.get("footer_widget_4") ?? ""),
-      facebook: String(formData.get("facebook") ?? ""),
-      instagram: String(formData.get("instagram") ?? ""),
-      twitter: String(formData.get("twitter") ?? ""),
-      youtube: String(formData.get("youtube") ?? ""),
+      facebook: normalizeUrl(String(formData.get("facebook") ?? "")),
+      instagram: normalizeUrl(String(formData.get("instagram") ?? "")),
+      twitter: normalizeUrl(String(formData.get("twitter") ?? "")),
+      youtube: normalizeUrl(String(formData.get("youtube") ?? "")),
       delivery_start_time: String(formData.get("delivery_start_time") ?? ""),
       delivery_end_time: String(formData.get("delivery_end_time") ?? ""),
       min_amount_for_free_delivery: String(formData.get("min_amount_for_free_delivery") ?? "0"),
@@ -75,20 +81,11 @@ export default function SettingsPage() {
     const payload = new FormData();
     const textFields = [
       "website_name",
-      "website_link",
       "address",
       "email",
       "phone_one",
       "phone_two",
       "copyright",
-      "footer_widget_1",
-      "footer_widget_2",
-      "footer_widget_3",
-      "footer_widget_4",
-      "facebook",
-      "instagram",
-      "twitter",
-      "youtube",
       "delivery_days",
       "delivery_start_time",
       "delivery_end_time",
@@ -100,19 +97,25 @@ export default function SettingsPage() {
     for (const field of textFields) {
       payload.append(field, String(formData.get(field) ?? ""));
     }
+    // These went through normalizeUrl() above (schemeless input like
+    // "facebook.com/x" gets "https://" prepended) — send that normalized
+    // value, not the raw form input, or the backend's stricter Joi .uri()
+    // check would reject exactly what the frontend just accepted.
+    payload.append("website_link", validated.website_link ?? "");
+    payload.append("facebook", validated.facebook ?? "");
+    payload.append("instagram", validated.instagram ?? "");
+    payload.append("twitter", validated.twitter ?? "");
+    payload.append("youtube", validated.youtube ?? "");
     payload.append("location_mod", formData.get("location_mod") ? "1" : "0");
     payload.append("delivery_days_time_mod", formData.get("delivery_days_time_mod") ? "1" : "0");
-    payload.append("footer_payment_logo_mod", formData.get("footer_payment_logo_mod") ? "1" : "0");
     if (mainLogoFile) payload.append("main_logo", mainLogoFile);
     if (favIconFile) payload.append("fav_icon", favIconFile);
-    if (paymentLogoFile) payload.append("payment_logo", paymentLogoFile);
 
     try {
       const updated = await webSettingService.update(payload);
       setData(updated);
       setMainLogoFile(null);
       setFavIconFile(null);
-      setPaymentLogoFile(null);
       toast.success("Settings saved");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to save settings"));
@@ -161,7 +164,6 @@ export default function SettingsPage() {
                 <div className="grid grid-cols-3 gap-3">
                   <ImageUploadField id="main_logo" label="Main Logo" existingImageUrl={uploadUrl("settings", data?.main_logo ?? undefined)} onFileChange={setMainLogoFile} />
                   <ImageUploadField id="fav_icon" label="Favicon" existingImageUrl={uploadUrl("settings", data?.fav_icon ?? undefined)} onFileChange={setFavIconFile} />
-                  <ImageUploadField id="payment_logo" label="Payment Logo" existingImageUrl={uploadUrl("settings", data?.payment_logo ?? undefined)} onFileChange={setPaymentLogoFile} />
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="website_name">Site name</Label>
@@ -244,52 +246,6 @@ export default function SettingsPage() {
                   />
                   <FieldError message={errors.address} />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label htmlFor="footer_widget_1">Footer widget 1</Label>
-                    <Input
-                      id="footer_widget_1"
-                      name="footer_widget_1"
-                      defaultValue={data?.footer_widget_1 ?? ""}
-                      aria-invalid={!!errors.footer_widget_1}
-                      onChange={() => errors.footer_widget_1 && setErrors((prev) => ({ ...prev, footer_widget_1: "" }))}
-                    />
-                    <FieldError message={errors.footer_widget_1} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="footer_widget_2">Footer widget 2</Label>
-                    <Input
-                      id="footer_widget_2"
-                      name="footer_widget_2"
-                      defaultValue={data?.footer_widget_2 ?? ""}
-                      aria-invalid={!!errors.footer_widget_2}
-                      onChange={() => errors.footer_widget_2 && setErrors((prev) => ({ ...prev, footer_widget_2: "" }))}
-                    />
-                    <FieldError message={errors.footer_widget_2} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="footer_widget_3">Footer widget 3</Label>
-                    <Input
-                      id="footer_widget_3"
-                      name="footer_widget_3"
-                      defaultValue={data?.footer_widget_3 ?? ""}
-                      aria-invalid={!!errors.footer_widget_3}
-                      onChange={() => errors.footer_widget_3 && setErrors((prev) => ({ ...prev, footer_widget_3: "" }))}
-                    />
-                    <FieldError message={errors.footer_widget_3} />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label htmlFor="footer_widget_4">Footer widget 4</Label>
-                    <Input
-                      id="footer_widget_4"
-                      name="footer_widget_4"
-                      defaultValue={data?.footer_widget_4 ?? ""}
-                      aria-invalid={!!errors.footer_widget_4}
-                      onChange={() => errors.footer_widget_4 && setErrors((prev) => ({ ...prev, footer_widget_4: "" }))}
-                    />
-                    <FieldError message={errors.footer_widget_4} />
-                  </div>
-                </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="delivery_days">Delivery days</Label>
                   <Input id="delivery_days" name="delivery_days" defaultValue={data?.delivery_days ?? ""} placeholder="Mon-Fri" />
@@ -359,10 +315,6 @@ export default function SettingsPage() {
                   <label className="flex items-center gap-2 text-sm">
                     <Checkbox name="delivery_days_time_mod" defaultChecked={data?.delivery_days_time_mod !== 0} />
                     Enforce delivery days/time window
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <Checkbox name="footer_payment_logo_mod" defaultChecked={data?.footer_payment_logo_mod !== 0} />
-                    Show payment logo in footer
                   </label>
                 </div>
               </CardContent>
