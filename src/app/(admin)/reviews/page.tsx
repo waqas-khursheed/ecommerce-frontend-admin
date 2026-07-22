@@ -10,6 +10,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { RowActions } from "@/components/data-table/row-actions";
 import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
+import { ConfirmActionDialog } from "@/components/data-table/confirm-action-dialog";
 import { Button } from "@/components/ui/button";
 import { reviewService } from "@/services/review.service";
 import { getApiErrorMessage } from "@/lib/apiError";
@@ -30,11 +31,20 @@ function StarRating({ rating }: { rating: number }) {
 }
 
 export default function ReviewsPage() {
-  const { items: rows, setItems: setRows, isLoading, reload: loadReviews, pagination } = usePaginatedList(
-    (params) => reviewService.list(params),
-    { pageSize: 10, errorMessage: "Failed to load reviews" }
-  );
+  const {
+    items: rows,
+    setItems: setRows,
+    isLoading,
+    reload: loadReviews,
+    pagination,
+    search,
+    setSearch,
+  } = usePaginatedList((params) => reviewService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load reviews",
+  });
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [pendingChange, setPendingChange] = useState<{ id: number; status: 1 | 2 } | null>(null);
 
   const setStatus = async (id: number, status: 0 | 1 | 2) => {
     try {
@@ -100,7 +110,7 @@ export default function ReviewsPage() {
                 size="icon"
                 className="size-8 text-emerald-600 hover:text-emerald-600"
                 aria-label="Approve review"
-                onClick={() => setStatus(row.original.id, 1)}
+                onClick={() => setPendingChange({ id: row.original.id, status: 1 })}
               >
                 <Check className="size-4" />
               </Button>
@@ -111,7 +121,7 @@ export default function ReviewsPage() {
                 size="icon"
                 className="size-8 text-red-600 hover:text-red-600"
                 aria-label="Reject review"
-                onClick={() => setStatus(row.original.id, 2)}
+                onClick={() => setPendingChange({ id: row.original.id, status: 2 })}
               >
                 <X className="size-4" />
               </Button>
@@ -138,6 +148,7 @@ export default function ReviewsPage() {
         isLoading={isLoading}
         searchPlaceholder="Search reviews..."
         searchColumn="product"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 
@@ -146,6 +157,22 @@ export default function ReviewsPage() {
         onOpenChange={(v) => !v && setDeletingId(null)}
         title="Delete this review?"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmActionDialog
+        open={pendingChange !== null}
+        onOpenChange={(v) => !v && setPendingChange(null)}
+        title={pendingChange?.status === 1 ? "Approve this review?" : "Reject this review?"}
+        description={
+          pendingChange?.status === 1
+            ? "The review becomes visible on the product page immediately."
+            : "The review stays hidden from the product page."
+        }
+        confirmLabel={pendingChange?.status === 1 ? "Yes, approve" : "Yes, reject"}
+        variant={pendingChange?.status === 2 ? "destructive" : "default"}
+        onConfirm={() => {
+          if (pendingChange) return setStatus(pendingChange.id, pendingChange.status);
+        }}
       />
     </div>
   );

@@ -1,8 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -30,6 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { stockService } from "@/services/stock.service";
 import { productService } from "@/services/product.service";
 import { attributeService, attributeItemService } from "@/services/attribute.service";
@@ -93,12 +96,29 @@ async function deriveSlotsForProduct(productId: number, attributes: Attribute[])
   return slots;
 }
 
-export default function StockPage() {
-  const { items: rows, isLoading, reload: loadAll, pagination } = usePaginatedList(
-    (params) => stockService.list(params),
+function StockPageContent() {
+  // Seeded from the Products page's "Manage Stock" row action
+  // (?product_id=N) so jumping there shows just that product's variants
+  // instead of the whole, unfiltered stock list.
+  const searchParams = useSearchParams();
+  const filterProductId = searchParams.get("product_id");
+
+  const {
+    items: rows,
+    isLoading,
+    reload: loadAll,
+    pagination,
+    search,
+    setSearch,
+  } = usePaginatedList(
+    (params) => stockService.list({ ...params, product_id: filterProductId ?? undefined }),
     { pageSize: 10, errorMessage: "Failed to load stock" }
   );
   const [products, setProducts] = useState<Product[]>([]);
+  const productItems = useMemo<ComboboxItem[]>(
+    () => products.map((p) => ({ value: String(p.id), label: p.title })),
+    [products]
+  );
   const [attributes, setAttributes] = useState<Attribute[]>([]);
   const [slots, setSlots] = useState<AttributeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
@@ -123,7 +143,12 @@ export default function StockPage() {
           productService.list({ limit: 100 }),
           attributeService.list({ limit: 100 }),
         ]);
-        setProducts(productsRes.items);
+        // Only variant products (is_variation) are ever read from `stocks`
+        // at checkout/display time — offering the rest here would let an
+        // admin "add stock" for a product where it can never be seen
+        // (the backend now also rejects this, but filtering it out of the
+        // picker avoids the dead end in the first place).
+        setProducts(productsRes.items.filter((p) => p.is_variation));
         setAttributes(attributesRes.items);
       } catch (error) {
         toast.error(getApiErrorMessage(error, "Failed to load stock form data"));
@@ -302,9 +327,15 @@ export default function StockPage() {
                   onClick={() => {
                     setEditing(null);
                     setErrors({});
-                    const firstProductId = products[0]?.id;
-                    setSelectedProductId(firstProductId ?? null);
-                    if (firstProductId) void loadSlotsForProduct(firstProductId);
+                    // Default to whichever product this page is filtered
+                    // to (arrived via "Manage Stock" from Products), else
+                    // just the first product in the picker.
+                    const preselected = filterProductId ? Number(filterProductId) : undefined;
+                    const defaultProductId =
+                      (preselected && products.some((p) => p.id === preselected) ? preselected : undefined) ??
+                      products[0]?.id;
+                    setSelectedProductId(defaultProductId ?? null);
+                    if (defaultProductId) void loadSlotsForProduct(defaultProductId);
                   }}
                 >
                   <Plus />
@@ -323,26 +354,19 @@ export default function StockPage() {
                 <div className="flex-1 space-y-4 px-4">
                   <div className="space-y-1.5">
                     <Label htmlFor="product_id">Product</Label>
-                    <Select
+                    <Combobox
+                      id="product_id"
                       name="product_id"
-                      value={selectedProductId ? String(selectedProductId) : undefined}
+                      placeholder="Search products..."
+                      value={selectedProductId ? String(selectedProductId) : null}
                       onValueChange={(v) => {
+                        if (!v) return;
                         const id = Number(v);
                         setSelectedProductId(id);
                         void loadSlotsForProduct(id);
                       }}
-                    >
-                      <SelectTrigger id="product_id" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map((p) => (
-                          <SelectItem key={p.id} value={String(p.id)}>
-                            {p.title}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                      items={productItems}
+                    />
                   </div>
 
                   {slotsLoading ? (
@@ -366,7 +390,9 @@ export default function StockPage() {
                                   }
                                 >
                                   <SelectTrigger id={name} className="w-full">
-                                    <SelectValue placeholder="—" />
+                                    <SelectValue placeholder="—">
+                                      {(value: string) => slot.items.find((i) => String(i.id) === value)?.title ?? value}
+                                    </SelectValue>
                                   </SelectTrigger>
                                   <SelectContent>
                                     {slot.items.map((i) => (
@@ -401,7 +427,11 @@ export default function StockPage() {
                             }}
                           >
                             <SelectTrigger className="w-full">
-                              <SelectValue placeholder="e.g. Color, Size, Capacity..." />
+                              <SelectValue placeholder="e.g. Color, Size, Capacity...">
+                                {(value: string) =>
+                                  availableTypesToAdd.find((a) => String(a.id) === value)?.attribute_title ?? value
+                                }
+                              </SelectValue>
                             </SelectTrigger>
                             <SelectContent>
                               {availableTypesToAdd.map((a) => (
@@ -500,12 +530,25 @@ export default function StockPage() {
         }
       />
 
+      {filterProductId && (
+        <div className="flex items-center gap-2 text-sm">
+          <span className="text-muted-foreground">Showing stock for:</span>
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-2.5 py-1 font-medium">
+            {productTitleById.get(Number(filterProductId)) ?? `Product #${filterProductId}`}
+            <Link href="/stock" aria-label="Clear product filter" className="text-muted-foreground hover:text-foreground">
+              <X className="size-3.5" />
+            </Link>
+          </span>
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         data={rows}
         isLoading={isLoading}
         searchPlaceholder="Search by product..."
         searchColumn="product"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 
@@ -516,5 +559,13 @@ export default function StockPage() {
         onConfirm={handleDelete}
       />
     </div>
+  );
+}
+
+export default function StockPage() {
+  return (
+    <Suspense fallback={null}>
+      <StockPageContent />
+    </Suspense>
   );
 }

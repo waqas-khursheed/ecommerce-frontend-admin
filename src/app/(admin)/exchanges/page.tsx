@@ -10,6 +10,7 @@ import { DataTable } from "@/components/data-table/data-table";
 import { StatusBadge } from "@/components/data-table/status-badge";
 import { RowActions } from "@/components/data-table/row-actions";
 import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
+import { ConfirmActionDialog } from "@/components/data-table/confirm-action-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -30,15 +31,24 @@ import { usePaginatedList } from "@/hooks/use-paginated-list";
 import { EXCHANGE_STATUS_LABELS, type Exchange } from "@/types/exchange";
 
 export default function ExchangesPage() {
-  const { items: rows, setItems: setRows, isLoading, reload: loadExchanges, pagination } = usePaginatedList(
-    (params) => exchangeService.list(params),
-    { pageSize: 10, errorMessage: "Failed to load exchange requests" }
-  );
+  const {
+    items: rows,
+    setItems: setRows,
+    isLoading,
+    reload: loadExchanges,
+    pagination,
+    search,
+    setSearch,
+  } = usePaginatedList((params) => exchangeService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load exchange requests",
+  });
   const [viewing, setViewing] = useState<Exchange | null>(null);
   const [open, setOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [adminNote, setAdminNote] = useState("");
   const [isUpdating, setIsUpdating] = useState(false);
+  const [pendingAction, setPendingAction] = useState<1 | 2 | null>(null);
 
   const openExchange = async (row: Exchange) => {
     setViewing(row);
@@ -132,6 +142,7 @@ export default function ExchangesPage() {
         isLoading={isLoading}
         searchPlaceholder="Search by customer..."
         searchColumn="customer_name"
+        serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
       />
 
@@ -238,10 +249,10 @@ export default function ExchangesPage() {
           <SheetFooter>
             {viewing?.status === 0 && (
               <>
-                <Button onClick={() => applyStatus(1)} disabled={isUpdating}>
+                <Button onClick={() => setPendingAction(1)} disabled={isUpdating}>
                   Approve
                 </Button>
-                <Button variant="destructive" onClick={() => applyStatus(2)} disabled={isUpdating}>
+                <Button variant="destructive" onClick={() => setPendingAction(2)} disabled={isUpdating}>
                   Reject
                 </Button>
               </>
@@ -261,6 +272,22 @@ export default function ExchangesPage() {
         onOpenChange={(v) => !v && setDeletingId(null)}
         title="Delete this exchange request?"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmActionDialog
+        open={pendingAction !== null}
+        onOpenChange={(v) => !v && setPendingAction(null)}
+        title={pendingAction === 1 ? "Approve this exchange request?" : "Reject this exchange request?"}
+        description={
+          pendingAction === 1
+            ? "This restocks the returned item and reserves the replacement variant. The customer will be emailed."
+            : "The customer will be emailed that their request was rejected."
+        }
+        confirmLabel={pendingAction === 1 ? "Yes, approve" : "Yes, reject"}
+        variant={pendingAction === 2 ? "destructive" : "default"}
+        onConfirm={() => {
+          if (pendingAction !== null) return applyStatus(pendingAction);
+        }}
       />
     </div>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import {
   type ColumnDef,
   type SortingState,
@@ -15,6 +15,7 @@ import { ArrowUpDown, ChevronLeft, ChevronRight, Loader2, Search } from "lucide-
 
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -30,6 +31,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+
+// Enables a checkbox column + a bulk-actions bar that appears above the
+// table once at least one row is selected. Selection is keyed by
+// `getRowId` (not table row index) and is cleared whenever `data` changes
+// (new page, reload, filter) — a selection referring to rows that are no
+// longer on screen would be confusing, so we don't try to persist it
+// across pages.
+export interface RowSelection<TData> {
+  getRowId: (row: TData) => string | number;
+  actions: (selectedIds: (string | number)[], clearSelection: () => void) => ReactNode;
+}
 
 export interface FilterTab {
   label: string;
@@ -68,6 +80,7 @@ interface DataTableProps<TData> {
   filterColumn?: string;
   toolbarActions?: ReactNode;
   pagination?: ServerPagination;
+  rowSelection?: RowSelection<TData>;
 }
 
 export function DataTable<TData>({
@@ -81,17 +94,59 @@ export function DataTable<TData>({
   filterColumn,
   toolbarActions,
   pagination,
+  rowSelection,
 }: DataTableProps<TData>) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const [localFilter, setLocalFilter] = useState("");
   const [activeTab, setActiveTab] = useState(filterTabs?.[0]?.value ?? "all");
+  const [selectedIds, setSelectedIds] = useState<Set<string | number>>(new Set());
+
+  useEffect(() => setSelectedIds(new Set()), [data]);
 
   const globalFilter = serverSearch ? serverSearch.value : localFilter;
   const setGlobalFilter = serverSearch ? serverSearch.onChange : setLocalFilter;
 
+  const columnsWithSelection = rowSelection
+    ? [
+        {
+          id: "__select",
+          header: () => {
+            const allSelected = data.length > 0 && selectedIds.size === data.length;
+            return (
+              <Checkbox
+                aria-label="Select all rows on this page"
+                checked={allSelected}
+                onCheckedChange={(checked) =>
+                  setSelectedIds(checked ? new Set(data.map(rowSelection.getRowId)) : new Set())
+                }
+              />
+            );
+          },
+          cell: ({ row }: { row: { original: TData } }) => {
+            const id = rowSelection.getRowId(row.original);
+            return (
+              <Checkbox
+                aria-label="Select row"
+                checked={selectedIds.has(id)}
+                onCheckedChange={(checked) =>
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    if (checked) next.add(id);
+                    else next.delete(id);
+                    return next;
+                  })
+                }
+              />
+            );
+          },
+        } as ColumnDef<TData, unknown>,
+        ...columns,
+      ]
+    : columns;
+
   const table = useReactTable({
     data,
-    columns,
+    columns: columnsWithSelection,
     // In server-search mode `data` is already filtered by the caller, so
     // `globalFilter` is left out of controlled state entirely — nothing
     // feeds the table's own filter state a value, so getFilteredRowModel/
@@ -156,6 +211,17 @@ export function DataTable<TData>({
         {toolbarActions && <div className="flex items-center gap-2">{toolbarActions}</div>}
       </div>
 
+      {rowSelection && selectedIds.size > 0 && (
+        <div className="flex items-center justify-between rounded-lg border bg-muted/50 px-4 py-2">
+          <span className="text-sm font-medium">
+            {selectedIds.size} selected
+          </span>
+          <div className="flex items-center gap-2">
+            {rowSelection.actions(Array.from(selectedIds), () => setSelectedIds(new Set()))}
+          </div>
+        </div>
+      )}
+
       <div className="overflow-hidden rounded-lg border">
         <Table>
           <TableHeader>
@@ -182,7 +248,7 @@ export function DataTable<TData>({
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={columnsWithSelection.length} className="h-24 text-center text-muted-foreground">
                   <Loader2 className="mx-auto size-5 animate-spin" />
                 </TableCell>
               </TableRow>
@@ -198,7 +264,7 @@ export function DataTable<TData>({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={columnsWithSelection.length} className="h-24 text-center text-muted-foreground">
                   No results.
                 </TableCell>
               </TableRow>

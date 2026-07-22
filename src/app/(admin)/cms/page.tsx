@@ -19,13 +19,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import {
   Sheet,
   SheetClose,
@@ -170,6 +164,11 @@ function FaqsTab() {
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
 
+  const categoryItems = useMemo<ComboboxItem[]>(
+    () => categories.map((c) => ({ value: String(c.id), label: c.title })),
+    [categories]
+  );
+
   useEffect(() => {
     (async () => {
       try {
@@ -287,20 +286,15 @@ function FaqsTab() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="category_id">Category</Label>
-                  <Select
+                  <Combobox
+                    id="category_id"
                     name="category_id"
+                    placeholder="Search categories..."
                     defaultValue={editing?.category_id ? String(editing.category_id) : undefined}
                     onValueChange={() => errors.category_id && setErrors((prev) => ({ ...prev, category_id: "" }))}
-                  >
-                    <SelectTrigger id="category_id" className="w-full" aria-invalid={!!errors.category_id}>
-                      <SelectValue placeholder="Select category" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {categories.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.title}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    items={categoryItems}
+                    aria-invalid={!!errors.category_id}
+                  />
                   <FieldError message={errors.category_id} />
                 </div>
               </div>

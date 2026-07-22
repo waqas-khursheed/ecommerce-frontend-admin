@@ -1,11 +1,14 @@
 "use client";
 
+import { useState } from "react";
 import { Bell, ChevronLeft, ChevronRight, MessageSquareText, ShoppingCart, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
 import { cn } from "@/lib/utils";
 import { getApiErrorMessage } from "@/lib/apiError";
 import { usePaginatedList } from "@/hooks/use-paginated-list";
@@ -23,6 +26,7 @@ export default function NotificationsPage() {
     (params) => notificationService.list(params),
     { pageSize: 10, errorMessage: "Failed to load notifications" }
   );
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const markAllRead = async () => {
     try {
@@ -49,6 +53,8 @@ export default function NotificationsPage() {
       setRows((prev) => prev.filter((n) => n.id !== id));
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to delete notification"));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -86,11 +92,13 @@ export default function NotificationsPage() {
                   <Icon className="size-4" />
                 </div>
                 <div className="flex-1 space-y-0.5">
-                  <p className="text-sm font-medium">{n.n_title}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="text-sm font-medium">{n.n_title}</p>
+                    {!n.seen && <Badge className="px-1.5 py-0 text-[10px]">New</Badge>}
+                  </div>
                   <p className="text-sm text-muted-foreground">{n.n_desc}</p>
                   <p className="text-xs text-muted-foreground/70">{new Date(n.created_at).toLocaleString()}</p>
                 </div>
-                {!n.seen && <span className="mt-1.5 size-2 shrink-0 rounded-full bg-primary" />}
                 <Button
                   variant="ghost"
                   size="icon"
@@ -98,7 +106,7 @@ export default function NotificationsPage() {
                   aria-label="Delete notification"
                   onClick={(e) => {
                     e.stopPropagation();
-                    remove(n.id);
+                    setDeletingId(n.id);
                   }}
                 >
                   <Trash2 className="size-4" />
@@ -138,6 +146,13 @@ export default function NotificationsPage() {
           </div>
         </div>
       )}
+
+      <ConfirmDeleteDialog
+        open={deletingId !== null}
+        onOpenChange={(v) => !v && setDeletingId(null)}
+        title="Delete this notification?"
+        onConfirm={() => remove(deletingId!)}
+      />
     </div>
   );
 }

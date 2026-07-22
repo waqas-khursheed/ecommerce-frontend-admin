@@ -21,6 +21,7 @@ import {
   Bell,
   Settings,
   ShieldCheck,
+  MailWarning,
 } from "lucide-react";
 
 export interface NavItem {
@@ -55,6 +56,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { title: "Products", href: "/products", icon: Package },
       { title: "Tags", href: "/tags", icon: Tag },
       { title: "Stock", href: "/stock", icon: Warehouse },
+      { title: "Stock Alerts", href: "/stock-alerts", icon: MailWarning },
     ],
   },
   {

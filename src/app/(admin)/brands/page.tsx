@@ -224,7 +224,7 @@ export default function BrandsPage() {
                     <Label htmlFor="status">Status</Label>
                     <Select name="status" defaultValue={String(editing?.status ?? 1)}>
                       <SelectTrigger id="status" className="w-full">
-                        <SelectValue />
+                        <SelectValue>{(value: string) => (value === "1" ? "Active" : "Inactive")}</SelectValue>
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="1">Active</SelectItem>

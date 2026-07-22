@@ -30,6 +30,12 @@ export interface Product {
   dis_end_date: string | null;
 
   quantity: number;
+  // Server-computed SUM(stocks.stock_qty) for this product — only meaningful
+  // when is_variation is true (quantity itself is the source of truth
+  // otherwise). Null means either no variant Stock rows exist yet, or all
+  // existing rows are untracked/unlimited (stock_qty null) — both cases
+  // point the admin at the Stock module rather than showing a fake number.
+  variant_stock_total: number | null;
   sku: string | null;
   status: 0 | 1;
   sold: number;

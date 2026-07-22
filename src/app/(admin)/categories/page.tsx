@@ -33,6 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { categoryService } from "@/services/category.service";
 import { uploadUrl } from "@/lib/http";
 import { getApiErrorMessage } from "@/lib/apiError";
@@ -67,17 +68,20 @@ export default function CategoriesPage() {
     }
   }, []);
   useEffect(() => {
-    (async () => {
-      try {
-        const { items } = await categoryService.list({ limit: 100 });
-        setAllCategories(items);
-      } catch (error) {
-        toast.error(getApiErrorMessage(error, "Failed to load categories"));
-      }
+    void (async () => {
+      await loadAllCategories();
     })();
-  }, []);
+  }, [loadAllCategories]);
 
   const parentTitleById = useMemo(() => new Map(allCategories.map((r) => [r.id, r.title])), [allCategories]);
+
+  const parentCategoryItems = useMemo<ComboboxItem[]>(
+    () => [
+      { value: "0", label: "None (top-level)" },
+      ...allCategories.filter((r) => r.id !== editing?.id).map((r) => ({ value: String(r.id), label: r.title })),
+    ],
+    [allCategories, editing]
+  );
 
   const columns = useMemo<ColumnDef<Category, unknown>[]>(
     () => [
@@ -238,21 +242,13 @@ export default function CategoriesPage() {
 
                   <div className="space-y-1.5">
                     <Label htmlFor="parent_id">Parent category</Label>
-                    <Select name="parent_id" defaultValue={String(editing?.parent_id ?? 0)}>
-                      <SelectTrigger id="parent_id" className="w-full">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="0">None (top-level)</SelectItem>
-                        {allCategories
-                          .filter((r) => r.id !== editing?.id)
-                          .map((r) => (
-                            <SelectItem key={r.id} value={String(r.id)}>
-                              {r.title}
-                            </SelectItem>
-                          ))}
-                      </SelectContent>
-                    </Select>
+                    <Combobox
+                      id="parent_id"
+                      name="parent_id"
+                      defaultValue={String(editing?.parent_id ?? 0)}
+                      placeholder="Search categories..."
+                      items={parentCategoryItems}
+                    />
                   </div>
 
                   <ImageUploadField
@@ -285,7 +281,7 @@ export default function CategoriesPage() {
                       <Label htmlFor="status">Status</Label>
                       <Select name="status" defaultValue={String(editing?.status ?? 1)}>
                         <SelectTrigger id="status" className="w-full">
-                          <SelectValue />
+                          <SelectValue>{(value: string) => (value === "1" ? "Active" : "Inactive")}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="1">Active</SelectItem>

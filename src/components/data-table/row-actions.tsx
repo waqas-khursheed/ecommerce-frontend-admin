@@ -1,5 +1,6 @@
 "use client";
 
+import type { ReactNode } from "react";
 import { Eye, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,9 +15,11 @@ interface RowActionsProps {
   onView?: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  /** Extra `DropdownMenuItem`s rendered between Edit and the destructive Delete entry — e.g. a "Manage Stock" link. */
+  extraActions?: ReactNode;
 }
 
-export function RowActions({ onView, onEdit, onDelete }: RowActionsProps) {
+export function RowActions({ onView, onEdit, onDelete, extraActions }: RowActionsProps) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -26,7 +29,7 @@ export function RowActions({ onView, onEdit, onDelete }: RowActionsProps) {
           </Button>
         }
       />
-      <DropdownMenuContent align="end" className="w-40">
+      <DropdownMenuContent align="end" className="w-44">
         {onView && (
           <DropdownMenuItem onClick={onView}>
             <Eye />
@@ -39,6 +42,7 @@ export function RowActions({ onView, onEdit, onDelete }: RowActionsProps) {
             Edit
           </DropdownMenuItem>
         )}
+        {extraActions}
         {onDelete && (
           <>
             <DropdownMenuSeparator />

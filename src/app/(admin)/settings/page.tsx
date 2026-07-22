@@ -19,6 +19,7 @@ import { validateForm, type FieldErrors } from "@/lib/validation";
 import { webSettingSchema } from "@/lib/validations/setting.schema";
 import { FieldError } from "@/components/ui/field-error";
 import { webSettingService } from "@/services/setting.service";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import type { WebSetting } from "@/types/setting";
 
 // Admins naturally type/paste URLs without a scheme ("facebook.com/wkstore"),
@@ -39,6 +40,9 @@ export default function SettingsPage() {
   const [mainLogoFile, setMainLogoFile] = useState<File | null>(null);
   const [favIconFile, setFavIconFile] = useState<File | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
+  const [isDirty, setIsDirty] = useState(false);
+
+  useUnsavedChangesWarning(isDirty);
 
   useEffect(() => {
     (async () => {
@@ -116,6 +120,7 @@ export default function SettingsPage() {
       setData(updated);
       setMainLogoFile(null);
       setFavIconFile(null);
+      setIsDirty(false);
       toast.success("Settings saved");
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to save settings"));
@@ -146,7 +151,7 @@ export default function SettingsPage() {
         breadcrumbs={[{ label: "Dashboard", href: "/dashboard" }, { label: "Settings" }]}
       />
 
-      <form action={handleSubmit} className="max-w-2xl space-y-4">
+      <form action={handleSubmit} onChange={() => setIsDirty(true)} className="max-w-2xl space-y-4">
         <Tabs defaultValue="general">
           <TabsList>
             <TabsTrigger value="general">General</TabsTrigger>
@@ -154,7 +159,7 @@ export default function SettingsPage() {
             <TabsTrigger value="social">Social</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="general" className="mt-4">
+          <TabsContent value="general" className="mt-4" keepMounted>
             <Card>
               <CardHeader>
                 <CardTitle>Store Details</CardTitle>
@@ -321,7 +326,7 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="seo" className="mt-4">
+          <TabsContent value="seo" className="mt-4" keepMounted>
             <Card>
               <CardHeader>
                 <CardTitle>SEO</CardTitle>
@@ -340,7 +345,7 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="social" className="mt-4">
+          <TabsContent value="social" className="mt-4" keepMounted>
             <Card>
               <CardHeader>
                 <CardTitle>Social Links</CardTitle>

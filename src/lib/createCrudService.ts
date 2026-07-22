@@ -49,5 +49,13 @@ export function createCrudService<TEntity, TCreatePayload = Partial<TEntity>, TU
       http
         .delete<ApiSuccessResponse<null>>(`${resourcePath}/${id}`)
         .then((res) => res.data.data),
+
+    // Opt-in — only wired up server-side for a subset of modules (products,
+    // orders). Calling it against a module without a /bulk-delete route will
+    // 404.
+    bulkRemove: (ids: (number | string)[]) =>
+      http
+        .post<ApiSuccessResponse<{ deleted: number; requested: number }>>(`${resourcePath}/bulk-delete`, { ids })
+        .then((res) => res.data.data),
   };
 }

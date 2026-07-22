@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { ColumnDef } from "@tanstack/react-table";
-import { Plus, Star, Trash2 } from "lucide-react";
+import { Boxes, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -11,6 +12,7 @@ import { StatusBadge } from "@/components/data-table/status-badge";
 import { RowActions } from "@/components/data-table/row-actions";
 import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
 import { ImageUploadField } from "@/components/data-table/image-upload-field";
+import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -33,6 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import { productService } from "@/services/product.service";
 import { categoryService } from "@/services/category.service";
 import { brandService } from "@/services/brand.service";
@@ -43,6 +46,7 @@ import { validateForm, type FieldErrors } from "@/lib/validation";
 import { productSchema } from "@/lib/validations/product.schema";
 import { FieldError } from "@/components/ui/field-error";
 import { usePaginatedList } from "@/hooks/use-paginated-list";
+import { useUnsavedChangesWarning } from "@/hooks/use-unsaved-changes-warning";
 import type { Product } from "@/types/product";
 import type { Category } from "@/types/category";
 import type { Brand } from "@/types/brand";
@@ -64,8 +68,13 @@ export default function ProductsPage() {
   const [galleryFiles, setGalleryFiles] = useState<FileList | null>(null);
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<number[]>([]);
   const [selectedTagIds, setSelectedTagIds] = useState<number[]>([]);
+  // Drives whether the form shows the flat Quantity field or points at the
+  // Stock module instead — see the "Pricing & inventory" section below.
+  const [isVariation, setIsVariation] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isDirty, setIsDirty] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [bulkDelete, setBulkDelete] = useState<{ ids: number[]; clear: () => void } | null>(null);
   const [errors, setErrors] = useState<FieldErrors>({});
 
   // Category/brand/tag pickers used by the product form — fetched once,
@@ -89,6 +98,13 @@ export default function ProductsPage() {
 
   const brandTitleById = useMemo(() => new Map(brands.map((b) => [b.id, b.title])), [brands]);
 
+  const brandItems = useMemo<ComboboxItem[]>(
+    () => brands.map((b) => ({ value: String(b.id), label: b.title })),
+    [brands]
+  );
+
+  useUnsavedChangesWarning(open && isDirty);
+
   const openCreate = () => {
     setEditing(null);
     setFeaturedImageFile(null);
@@ -96,7 +112,9 @@ export default function ProductsPage() {
     setGalleryFiles(null);
     setSelectedCategoryIds([]);
     setSelectedTagIds([]);
+    setIsVariation(false);
     setErrors({});
+    setIsDirty(false);
     setOpen(true);
   };
 
@@ -112,7 +130,9 @@ export default function ProductsPage() {
     setEditing(product);
     setSelectedCategoryIds((product.assignCatToProducts ?? []).map((a) => a.category_id));
     setSelectedTagIds([]);
+    setIsVariation(!!product.is_variation);
     setErrors({});
+    setIsDirty(false);
     setOpen(true);
 
     try {
@@ -123,6 +143,7 @@ export default function ProductsPage() {
       setEditing(full);
       setSelectedCategoryIds((full.assignCatToProducts ?? []).map((a) => a.category_id));
       setSelectedTagIds(productTags.map((t) => t.tag_id));
+      setIsVariation(!!full.is_variation);
     } catch (error) {
       toast.error(getApiErrorMessage(error, "Failed to load product details"));
     }
@@ -160,16 +181,27 @@ export default function ProductsPage() {
         header: "Price",
         cell: ({ getValue }) => `$${Number(getValue()).toFixed(2)}`,
       },
-      { accessorKey: "quantity", header: "Stock" },
+      {
+        id: "stock",
+        header: "Stock",
+        // `quantity` only means anything for non-variant products — for a
+        // variant product it's always 0 by convention (real stock lives per
+        // variant in the Stock module), so showing it here would read as
+        // "out of stock" even when it isn't. Show the honest aggregate
+        // instead, with a hint when no variant stock has been set up yet.
+        cell: ({ row }) => {
+          if (!row.original.is_variation) return row.original.quantity;
+          const total = row.original.variant_stock_total;
+          if (total === null) {
+            return <span className="text-muted-foreground">Not set up</span>;
+          }
+          return `${total} (variants)`;
+        },
+      },
       {
         accessorKey: "sold",
-        header: "Rating",
-        cell: () => (
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <Star className="size-3.5" />
-            —
-          </span>
-        ),
+        header: "Sold",
+        cell: ({ getValue }) => getValue() as number,
       },
       {
         accessorKey: "status",
@@ -181,7 +213,18 @@ export default function ProductsPage() {
         header: "",
         cell: ({ row }) => (
           <div className="flex justify-end">
-            <RowActions onEdit={() => openEdit(row.original)} onDelete={() => setDeletingId(row.original.id)} />
+            <RowActions
+              onEdit={() => openEdit(row.original)}
+              onDelete={() => setDeletingId(row.original.id)}
+              extraActions={
+                row.original.is_variation ? (
+                  <DropdownMenuItem render={<Link href={`/stock?product_id=${row.original.id}`} />}>
+                    <Boxes />
+                    Manage Stock
+                  </DropdownMenuItem>
+                ) : undefined
+              }
+            />
           </div>
         ),
       },
@@ -259,6 +302,7 @@ export default function ProductsPage() {
       // Tag assignment lives in its own table (assign_tag_to_products), not
       // part of the product create/update payload — synced separately here.
       if (productId) await productTagService.sync(productId, selectedTagIds);
+      setIsDirty(false);
       setOpen(false);
       setEditing(null);
       await loadAll();
@@ -284,6 +328,18 @@ export default function ProductsPage() {
     }
   };
 
+  const handleBulkDelete = async () => {
+    if (!bulkDelete) return;
+    try {
+      const result = await productService.bulkRemove(bulkDelete.ids);
+      toast.success(`${result.deleted} product(s) deleted`);
+      bulkDelete.clear();
+      await loadAll();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete selected products"));
+    }
+  };
+
   const handleRemoveGalleryImage = async (galleryId: number) => {
     try {
       await productService.removeGalleryImage(galleryId);
@@ -306,13 +362,23 @@ export default function ProductsPage() {
           <Sheet
             open={open}
             onOpenChange={(v) => {
+              if (!v && isDirty && !window.confirm("You have unsaved changes. Discard them?")) {
+                return;
+              }
               setOpen(v);
-              if (!v) setEditing(null);
+              if (!v) {
+                setEditing(null);
+                setIsDirty(false);
+              }
             }}
           >
             <SheetTrigger render={<Button onClick={openCreate}><Plus />Add Product</Button>} />
             <SheetContent className="w-full overflow-y-auto sm:max-w-2xl">
-              <form action={handleSubmit} className="flex h-full flex-col overflow-y-auto">
+              <form
+                action={handleSubmit}
+                onChange={() => setIsDirty(true)}
+                className="flex h-full flex-col overflow-y-auto"
+              >
                 <SheetHeader>
                   <SheetTitle>{editing ? "Edit Product" : "Add Product"}</SheetTitle>
                   <SheetDescription>
@@ -396,24 +462,41 @@ export default function ProductsPage() {
                         <FieldError message={errors.d_percentage} />
                       </div>
                     </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label htmlFor="quantity" required>Quantity</Label>
-                        <Input
-                          id="quantity"
-                          name="quantity"
-                          type="number"
-                          defaultValue={editing?.quantity}
-                          aria-invalid={!!errors.quantity}
-                          onChange={() => errors.quantity && setErrors((prev) => ({ ...prev, quantity: "" }))}
-                        />
-                        <FieldError message={errors.quantity} />
-                      </div>
+                    <div className={isVariation ? "grid grid-cols-1 gap-3" : "grid grid-cols-2 gap-3"}>
+                      {!isVariation && (
+                        <div className="space-y-1.5">
+                          <Label htmlFor="quantity" required>Quantity</Label>
+                          <Input
+                            id="quantity"
+                            name="quantity"
+                            type="number"
+                            defaultValue={editing?.quantity}
+                            aria-invalid={!!errors.quantity}
+                            onChange={() => errors.quantity && setErrors((prev) => ({ ...prev, quantity: "" }))}
+                          />
+                          <FieldError message={errors.quantity} />
+                        </div>
+                      )}
                       <div className="space-y-1.5">
                         <Label htmlFor="sku">SKU</Label>
                         <Input id="sku" name="sku" defaultValue={editing?.sku ?? ""} />
                       </div>
                     </div>
+                    {isVariation && (
+                      <div className="rounded-md border border-dashed p-3 text-sm text-muted-foreground">
+                        <p>Stock for this product is tracked per-variant in the Stock module, not here.</p>
+                        {editing && (
+                          <Link
+                            href={`/stock?product_id=${editing.id}`}
+                            className="mt-2 inline-flex items-center gap-1.5 font-medium text-foreground hover:underline"
+                          >
+                            <Boxes className="size-4" />
+                            Manage stock for this product
+                          </Link>
+                        )}
+                        {!editing && <p className="mt-1">You can add variant stock once this product is created.</p>}
+                      </div>
+                    )}
                     <div className="space-y-1.5">
                       <Label htmlFor="weight">Weight</Label>
                       <Input id="weight" name="weight" type="number" step="0.01" defaultValue={editing?.weight ?? ""} />
@@ -478,18 +561,13 @@ export default function ProductsPage() {
                     <h3 className="text-sm font-semibold text-muted-foreground">Organization</h3>
                     <div className="space-y-1.5">
                       <Label htmlFor="brand_id">Brand</Label>
-                      <Select name="brand_id" defaultValue={editing?.brand_id ? String(editing.brand_id) : undefined}>
-                        <SelectTrigger id="brand_id" className="w-full">
-                          <SelectValue placeholder="Select a brand" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {brands.map((b) => (
-                            <SelectItem key={b.id} value={String(b.id)}>
-                              {b.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <Combobox
+                        id="brand_id"
+                        name="brand_id"
+                        defaultValue={editing?.brand_id ? String(editing.brand_id) : undefined}
+                        placeholder="Search brands..."
+                        items={brandItems}
+                      />
                     </div>
                     <div className="space-y-1.5">
                       <Label>Categories</Label>
@@ -540,7 +618,11 @@ export default function ProductsPage() {
                         Best seller
                       </label>
                       <label className="flex items-center gap-2 text-sm">
-                        <Checkbox name="is_variation" defaultChecked={editing?.is_variation} />
+                        <Checkbox
+                          name="is_variation"
+                          checked={isVariation}
+                          onCheckedChange={(checked) => setIsVariation(!!checked)}
+                        />
                         Has variations (size/color)
                       </label>
                       <label className="flex items-center gap-2 text-sm">
@@ -552,7 +634,7 @@ export default function ProductsPage() {
                       <Label htmlFor="status">Status</Label>
                       <Select name="status" defaultValue={String(editing?.status ?? 1)}>
                         <SelectTrigger id="status" className="w-full">
-                          <SelectValue />
+                          <SelectValue>{(value: string) => (value === "1" ? "Active" : "Draft")}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="1">Active</SelectItem>
@@ -595,6 +677,19 @@ export default function ProductsPage() {
         searchColumn="title"
         serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
+        rowSelection={{
+          getRowId: (row) => row.id,
+          actions: (selectedIds, clearSelection) => (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkDelete({ ids: selectedIds as number[], clear: clearSelection })}
+            >
+              <Trash2 className="size-4" />
+              Delete selected
+            </Button>
+          ),
+        }}
       />
 
       <ConfirmDeleteDialog
@@ -602,6 +697,14 @@ export default function ProductsPage() {
         onOpenChange={(v) => !v && setDeletingId(null)}
         title="Delete this product?"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDeleteDialog
+        open={bulkDelete !== null}
+        onOpenChange={(v) => !v && setBulkDelete(null)}
+        title={`Delete ${bulkDelete?.ids.length ?? 0} selected product(s)?`}
+        description="This action cannot be undone."
+        onConfirm={handleBulkDelete}
       />
     </div>
   );

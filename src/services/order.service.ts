@@ -24,4 +24,9 @@ export const orderService = {
 
   remove: (id: number | string) =>
     http.delete<ApiSuccessResponse<null>>(`/admin/order/${id}`).then((res) => res.data.data),
+
+  bulkRemove: (ids: (number | string)[]) =>
+    http
+      .post<ApiSuccessResponse<{ deleted: number; requested: number }>>("/admin/order/bulk-delete", { ids })
+      .then((res) => res.data.data),
 };

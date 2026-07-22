@@ -15,13 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Combobox, type ComboboxItem } from "@/components/ui/combobox";
 import {
   Sheet,
   SheetClose,
@@ -190,6 +184,11 @@ function StatesTab() {
     })();
   }, []);
 
+  const countryItems = useMemo<ComboboxItem[]>(
+    () => countries.map((c) => ({ value: String(c.id), label: c.country_name })),
+    [countries]
+  );
+
   const handleSubmit = async (formData: FormData) => {
     const { data: payload, errors: validationErrors } = validateForm(stateSchema, {
       name: String(formData.get("name") ?? ""),
@@ -278,20 +277,15 @@ function StatesTab() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="country_id">Country</Label>
-                  <Select
+                  <Combobox
+                    id="country_id"
                     name="country_id"
+                    placeholder="Search countries..."
                     defaultValue={editing?.country_id ? String(editing.country_id) : undefined}
                     onValueChange={() => errors.country_id && setErrors((prev) => ({ ...prev, country_id: "" }))}
-                  >
-                    <SelectTrigger id="country_id" className="w-full" aria-invalid={!!errors.country_id}>
-                      <SelectValue placeholder="Select country" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {countries.map((c) => (
-                        <SelectItem key={c.id} value={String(c.id)}>{c.country_name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    items={countryItems}
+                    aria-invalid={!!errors.country_id}
+                  />
                   <FieldError message={errors.country_id} />
                 </div>
               </div>
@@ -331,6 +325,11 @@ function CitiesTab() {
       }
     })();
   }, []);
+
+  const stateItems = useMemo<ComboboxItem[]>(
+    () => states.map((s) => ({ value: String(s.id), label: s.name })),
+    [states]
+  );
 
   const handleSubmit = async (formData: FormData) => {
     const { data: payload, errors: validationErrors } = validateForm(citySchema, {
@@ -420,20 +419,15 @@ function CitiesTab() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="state_id">State</Label>
-                  <Select
+                  <Combobox
+                    id="state_id"
                     name="state_id"
+                    placeholder="Search states..."
                     defaultValue={editing?.state_id ? String(editing.state_id) : undefined}
                     onValueChange={() => errors.state_id && setErrors((prev) => ({ ...prev, state_id: "" }))}
-                  >
-                    <SelectTrigger id="state_id" className="w-full" aria-invalid={!!errors.state_id}>
-                      <SelectValue placeholder="Select state" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {states.map((s) => (
-                        <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    items={stateItems}
+                    aria-invalid={!!errors.state_id}
+                  />
                   <FieldError message={errors.state_id} />
                 </div>
               </div>
@@ -582,6 +576,11 @@ function ProductAvailabilityTab() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
 
+  const productAvailabilityItems = useMemo<ComboboxItem[]>(
+    () => products.map((p) => ({ value: String(p.id), label: p.title })),
+    [products]
+  );
+
   useEffect(() => {
     (async () => {
       try {
@@ -641,16 +640,13 @@ function ProductAvailabilityTab() {
     <div className="space-y-4">
       <div className="max-w-sm space-y-1.5">
         <Label htmlFor="product">Product</Label>
-        <Select value={selectedProductId} onValueChange={loadAssignments}>
-          <SelectTrigger id="product" className="w-full">
-            <SelectValue placeholder="Select a product" />
-          </SelectTrigger>
-          <SelectContent>
-            {products.map((p) => (
-              <SelectItem key={p.id} value={String(p.id)}>{p.title}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <Combobox
+          id="product"
+          placeholder="Search products..."
+          value={selectedProductId || null}
+          onValueChange={loadAssignments}
+          items={productAvailabilityItems}
+        />
       </div>
 
       {selectedProductId && (

@@ -410,7 +410,9 @@ export default function AttributesPage() {
                         }
                       >
                         <SelectTrigger id="attribute_id" className="w-full" aria-invalid={!!itemErrors.attribute_id}>
-                          <SelectValue />
+                          <SelectValue>
+                            {(value: string) => allAttributes.find((a) => String(a.id) === value)?.attribute_title ?? value}
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {allAttributes.map((a) => (

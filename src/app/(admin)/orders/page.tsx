@@ -9,8 +9,10 @@ import { toast } from "sonner";
 import { PageHeader } from "@/components/page-header";
 import { DataTable } from "@/components/data-table/data-table";
 import { StatusBadge } from "@/components/data-table/status-badge";
+import { Badge } from "@/components/ui/badge";
 import { AvatarCell } from "@/components/data-table/avatar-cell";
 import { ConfirmDeleteDialog } from "@/components/data-table/confirm-delete-dialog";
+import { ConfirmActionDialog } from "@/components/data-table/confirm-action-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -65,6 +67,8 @@ function OrdersPageContent() {
   const [open, setOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [bulkDelete, setBulkDelete] = useState<{ ids: number[]; clear: () => void } | null>(null);
+  const [pendingStatus, setPendingStatus] = useState<number | null>(null);
 
   const openOrder = async (id: number) => {
     setOpen(true);
@@ -82,11 +86,16 @@ function OrdersPageContent() {
     }
   };
 
-  const handleStatusChange = async (status: string | null) => {
-    if (!viewing || !status) return;
+  // Delivered/Cancelled/Returned/Refunded are hard to walk back cleanly (a
+  // Cancelled/Returned order also triggers a stock restore server-side), so
+  // a misclick on the Select shouldn't be able to apply them instantly.
+  const CONFIRM_REQUIRED_STATUSES = [3, 5, 6, 7];
+
+  const applyStatusChange = async (status: number) => {
+    if (!viewing) return;
     setIsUpdating(true);
     try {
-      const updated = await orderService.updateStatus(viewing.id, Number(status));
+      const updated = await orderService.updateStatus(viewing.id, status);
       setViewing((prev) => (prev ? { ...prev, status: updated.status } : prev));
       setRows((prev) => prev.map((r) => (r.id === viewing.id ? { ...r, status: updated.status } : r)));
       toast.success("Order status updated");
@@ -95,6 +104,19 @@ function OrdersPageContent() {
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleStatusChange = async (status: string | null) => {
+    if (!viewing || !status) return;
+    const nextStatus = Number(status);
+    if (nextStatus === viewing.status) return;
+
+    if (CONFIRM_REQUIRED_STATUSES.includes(nextStatus)) {
+      setPendingStatus(nextStatus);
+      return;
+    }
+
+    await applyStatusChange(nextStatus);
   };
 
   const handlePaymentStatusChange = async (payment_status: string | null) => {
@@ -111,6 +133,20 @@ function OrdersPageContent() {
       toast.error(getApiErrorMessage(error, "Failed to update payment status"));
     } finally {
       setIsUpdating(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!bulkDelete) return;
+    try {
+      const result = await orderService.bulkRemove(bulkDelete.ids);
+      toast.success(`${result.deleted} order(s) deleted`);
+      bulkDelete.clear();
+      await loadOrders();
+    } catch (error) {
+      toast.error(getApiErrorMessage(error, "Failed to delete selected orders"));
+    } finally {
+      setBulkDelete(null);
     }
   };
 
@@ -169,7 +205,13 @@ function OrdersPageContent() {
       {
         accessorKey: "seen",
         header: "Seen",
-        cell: ({ getValue }) => (getValue() ? "" : <span className="size-2 rounded-full bg-blue-500 inline-block" />),
+        cell: ({ getValue }) =>
+          getValue() ? null : (
+            <Badge className="gap-1 px-1.5 py-0 text-[10px]">
+              <span className="size-1.5 rounded-full bg-current" />
+              New
+            </Badge>
+          ),
       },
       {
         id: "actions",
@@ -211,6 +253,19 @@ function OrdersPageContent() {
         searchColumn="order_number"
         serverSearch={{ value: search, onChange: setSearch }}
         pagination={pagination}
+        rowSelection={{
+          getRowId: (row) => row.id,
+          actions: (selectedIds, clearSelection) => (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => setBulkDelete({ ids: selectedIds as number[], clear: clearSelection })}
+            >
+              <Trash2 className="size-4" />
+              Delete selected
+            </Button>
+          ),
+        }}
       />
 
       <Sheet open={open} onOpenChange={(v) => { setOpen(v); if (!v) setViewing(null); }}>
@@ -227,7 +282,7 @@ function OrdersPageContent() {
                   <label className="text-sm font-medium">Order Status</label>
                   <Select value={String(viewing.status)} onValueChange={handleStatusChange} disabled={isUpdating}>
                     <SelectTrigger className="w-full">
-                      <SelectValue />
+                      <SelectValue>{(value: string) => ORDER_STATUS_LABELS[Number(value)] ?? value}</SelectValue>
                     </SelectTrigger>
                     <SelectContent>
                       {Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => (
@@ -246,7 +301,7 @@ function OrdersPageContent() {
                     disabled={isUpdating}
                   >
                     <SelectTrigger className="w-full">
-                      <SelectValue />
+                      <SelectValue className="capitalize" />
                     </SelectTrigger>
                     <SelectContent>
                       {PAYMENT_STATUS_OPTIONS.map((option) => (
@@ -380,6 +435,29 @@ function OrdersPageContent() {
         onOpenChange={(v) => !v && setDeletingId(null)}
         title="Delete this order?"
         onConfirm={handleDelete}
+      />
+
+      <ConfirmDeleteDialog
+        open={bulkDelete !== null}
+        onOpenChange={(v) => !v && setBulkDelete(null)}
+        title={`Delete ${bulkDelete?.ids.length ?? 0} selected order(s)?`}
+        description="This action cannot be undone."
+        onConfirm={handleBulkDelete}
+      />
+
+      <ConfirmActionDialog
+        open={pendingStatus !== null}
+        onOpenChange={(v) => !v && setPendingStatus(null)}
+        title={`Mark order as ${pendingStatus !== null ? ORDER_STATUS_LABELS[pendingStatus] : ""}?`}
+        description={
+          pendingStatus === 5 || pendingStatus === 6
+            ? "This restores the ordered items back into stock and cannot be easily undone."
+            : "This status change cannot be easily undone."
+        }
+        confirmLabel="Yes, update status"
+        onConfirm={() => {
+          if (pendingStatus !== null) return applyStatusChange(pendingStatus);
+        }}
       />
     </div>
   );

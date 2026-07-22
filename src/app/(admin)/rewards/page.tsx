@@ -304,10 +304,16 @@ function EarningMethodsTab() {
 }
 
 function UserRewardsTab() {
-  const { items: rows, isLoading, pagination } = usePaginatedList(
-    (params) => userRewardService.list(params),
-    { pageSize: 10, errorMessage: "Failed to load user rewards" }
-  );
+  const {
+    items: rows,
+    isLoading,
+    pagination,
+    search,
+    setSearch,
+  } = usePaginatedList((params) => userRewardService.list(params), {
+    pageSize: 10,
+    errorMessage: "Failed to load user rewards",
+  });
 
   const columns = useMemo<ColumnDef<UserReward, unknown>[]>(
     () => [
@@ -329,6 +335,7 @@ function UserRewardsTab() {
       isLoading={isLoading}
       searchPlaceholder="Search customers..."
       searchColumn="customer"
+      serverSearch={{ value: search, onChange: setSearch }}
       pagination={pagination}
     />
   );
