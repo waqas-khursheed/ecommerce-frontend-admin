@@ -10,7 +10,6 @@ export * from "./coupon.service";
 export * from "./order.service";
 export * from "./user.service";
 export * from "./review.service";
-export * from "./reward.service";
 export * from "./cms.service";
 export * from "./setting.service";
 export * from "./location.service";

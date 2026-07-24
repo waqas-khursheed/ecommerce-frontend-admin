@@ -67,7 +67,6 @@ export interface Order {
   sub_total: number;
   coupon_discount: number | null;
   coupon_title: string | null;
-  rewards_discount: number;
   grand_total: number;
   type: string | null;
   delivery_day: string | null;
@@ -75,7 +74,6 @@ export interface Order {
   delivery_end_time: string | null;
   payment_status: PaymentStatus;
   order_type: number;
-  is_deduction: number | null;
   seen: number;
   created_at: string;
   updated_at: string;

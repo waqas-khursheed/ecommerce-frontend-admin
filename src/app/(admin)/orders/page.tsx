@@ -380,12 +380,6 @@ function OrdersPageContent() {
                     <span>-${Number(viewing.coupon_discount).toFixed(2)}</span>
                   </div>
                 )}
-                {!!viewing.rewards_discount && (
-                  <div className="flex justify-between">
-                    <span className="text-muted-foreground">Rewards discount</span>
-                    <span>-${Number(viewing.rewards_discount).toFixed(2)}</span>
-                  </div>
-                )}
                 <div className="flex justify-between text-base font-semibold">
                   <span>Grand Total</span>
                   <span>${Number(viewing.grand_total).toFixed(2)}</span>

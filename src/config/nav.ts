@@ -14,7 +14,6 @@ import {
   Users,
   Star,
   Repeat,
-  Gift,
   Contact,
   FileText,
   MapPin,
@@ -77,10 +76,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
   {
     label: "Engagement",
-    items: [
-      { title: "Rewards", href: "/rewards", icon: Gift },
-      { title: "Leads", href: "/leads", icon: Contact },
-    ],
+    items: [{ title: "Leads", href: "/leads", icon: Contact }],
   },
   {
     label: "Content",
